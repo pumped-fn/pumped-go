@@ -1,0 +1,15 @@
+{
+  "name": "pumped-fn-monorepo",
+  "private": true,
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "docs:dev": "mintlify dev",
+    "docs:build": "mintlify build"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  },
+  "license": "MIT"
+}
