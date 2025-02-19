@@ -17,5 +17,6 @@ export {
   mutable,
   resource,
   effect,
-  ref
+  ref,
+  resolve
 } from "./core"

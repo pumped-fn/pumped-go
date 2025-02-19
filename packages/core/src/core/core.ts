@@ -2,12 +2,18 @@ export interface Cleanup {
   (): void
 }
 
+type InferOutput<T> = T extends Promise<infer X>
+  ? InferOutput<X>
+  : T extends Output<infer X>
+  ? X
+  : T
+
 export interface GetAccessor<T> {
-  get: () => Awaited<T> extends Output<infer X> ? X : T
+  get: () => InferOutput<T>
 }
 
 const getAccessor = <T>(get: () => T): GetAccessor<T> => ({
-  get: () => get() as any
+  get: () => get() as InferOutput<T>
 })
 
 export const outputSymbol = Symbol('jumped-fn.output')
@@ -80,7 +86,7 @@ export interface Scope {
   resolve<T>(executor: Executor<T>): Promise<GetAccessor<T>>
   update<T>(executor: Executor<MutableOutput<T> | Promise<MutableOutput<T>>>, updateFn: (current: T) => T): Promise<void>
   reset<T>(executor: Executor<T>): Promise<void>
-  release(executor: Executor<EffectOutput | ResourceOutput<any>>): Promise<void>
+  release(executor: Executor<any>): Promise<void>
 
   dispose(): Promise<void>
   on<T>(executor: Executor<T>, listener: (value: T) => void): Cleanup
@@ -97,6 +103,31 @@ export const createScope = (): Scope => {
   return new BaseScope()
 }
 
+export function resolve<T>(scope: Scope, input: Executor<T>): Promise<GetAccessor<Awaited<T>>>
+export function resolve<T extends Array<unknown> | object>(
+  scope: Scope,
+  input: { [K in keyof T]: Executor<T[K]> }): Promise<{ [K in keyof T]: GetAccessor<Awaited<T[K]>> }>
+
+export async function resolve<T>(scope: Scope, input: unknown): Promise<unknown> {
+  if (input === undefined || input === null || typeof input !== 'object') {
+    throw new Error('Invalid input')
+  }
+
+  if (isExecutor(input)) {
+    return scope.resolve(input)
+  }
+
+  if (Array.isArray(input)) {
+    return Promise.all(input.map((executor) => scope.resolve(executor)))
+  }
+
+  const entries = await Promise.all(
+    Object.entries(input).map(async ([key, executor]) => [key, (await scope.resolve(executor))])
+  )
+  const result = Object.fromEntries(entries)
+  return result
+}
+
 export const provide = <T>(factory: (scope: Scope) => T): Executor<T> => {
   return {
     factory: (_, scope) => factory(scope),
@@ -107,7 +138,7 @@ export const provide = <T>(factory: (scope: Scope) => T): Executor<T> => {
 
 export const derive = <T extends Array<unknown> | object, R>(
   dependencies: { [K in keyof T]: Executor<T[K]> },
-  factory: (dependency: { [K in keyof T]: GetAccessor<T[K]> }, scope: Scope) => R | Promise<R>
+  factory: (dependency: { [K in keyof T]: InferOutput<T[K]> }, scope: Scope) => R | Promise<R>
 ): Executor<R> => {
   return {
     factory: (dependencies, scope) => factory(dependencies as any, scope),
@@ -116,7 +147,10 @@ export const derive = <T extends Array<unknown> | object, R>(
   }
 }
 
-export const ref = <T>(executor: Executor<T>): Executor<Executor<T>> => {
+const refSymbol = Symbol('jumped-fn.ref')
+type RefExecutor<T> = Executor<Executor<T>> & { [refSymbol]: true }
+
+export const ref = <T>(executor: Executor<T>): RefExecutor<T> => {
   return {
     factory: async (_, scope) => {
       await scope.resolve(executor)
@@ -124,7 +158,8 @@ export const ref = <T>(executor: Executor<T>): Executor<Executor<T>> => {
       return executor
     },
     dependencies: [],
-    [executorSymbol]: true
+    [executorSymbol]: true,
+    [refSymbol]: true
   }
 }
 
@@ -132,7 +167,7 @@ export const errors = {
   scopeDisposed: () => new Error('Scope is disposed'),
   unResolved: () => new Error('Executor is not resolved'),
   notMutableExecutor: () => new Error('Reference executor is not mutable'),
-  executorIsBeingResolved: () => new Error('Executor is being resolved')
+  executorIsBeingResolved: () => new Error('Executor is being resolved'),
 }
 
 type ResolvedContainer = { kind: 'resolved', value: unknown }
@@ -154,7 +189,7 @@ class BaseScope implements Scope, ScopeInner {
     }
   }
 
-  #makeGetAccessor<T>(executor: Executor<T>) {
+  #makeGetAccessor<T>(executor: Executor<T>): GetAccessor<T> {
     return getAccessor(() => {
       this.#ensureNotDisposed()
 
@@ -191,21 +226,22 @@ class BaseScope implements Scope, ScopeInner {
   async #resolveDependencyArray(dependencies: Executor<unknown>[]): Promise<unknown[]> {
     const result: unknown[] = []
     for (const dep of dependencies) {
-      result.push(await this.resolve(dep))
+      result.push((await this.resolve(dep)).get())
     }
+
     return result
   }
 
   async #resolveDependencyObject(dependencies: Record<string, Executor<unknown>>): Promise<Record<string, unknown>> {
     const result = {} as Record<string, unknown>
     for (const [key, dep] of Object.entries(dependencies)) {
-      result[key] = await this.resolve(dep)
+      result[key] = (await this.resolve(dep)).get()
     }
 
     return result
   }
 
-  async #resolveDependency(dependencies: Executor<unknown>[] | Record<string, Executor<unknown>> | undefined): Promise<unknown> {
+  async #resolveDependency(dependencies: Executor<unknown>[] | Record<string, Executor<unknown>> | undefined): Promise<unknown[] | Record<string, unknown> | undefined> {
     if (!dependencies) return undefined
 
     return Array.isArray(dependencies)
@@ -226,7 +262,7 @@ class BaseScope implements Scope, ScopeInner {
     }
   }
 
-  async #evalute<T>(executor: Executor<T>): Promise<GetAccessor<T>> {
+  async #evalute<T>(executor: Executor<T>): Promise<GetAccessor<Awaited<T>>> {
     this.#ensureNotDisposed()
     let container = this.#values.get(executor) || { kind: 'pending', promise: null as any } as Container
 
@@ -257,7 +293,7 @@ class BaseScope implements Scope, ScopeInner {
     Object.assign(container, { promise: willResolve })
     this.#values.set(executor, container)
 
-    return await willResolve as Promise<GetAccessor<T>>
+    return await willResolve as Promise<GetAccessor<Awaited<T>>>
   }
 
   async #reevaluateDependencies(executor: Executor<unknown>): Promise<void> {
@@ -279,13 +315,13 @@ class BaseScope implements Scope, ScopeInner {
     await Promise.all(promises)
   }
 
-  resolve<T>(executor: Executor<T>): Promise<GetAccessor<T>> {
+  async resolve<T>(executor: Executor<T>): Promise<GetAccessor<T>> {
     this.#ensureNotDisposed()
 
     const container = this.#values.get(executor)
     if (container !== undefined) {
       if (container.kind === 'resolved') {
-        return Promise.resolve(this.#makeGetAccessor(executor))
+        return this.#makeGetAccessor(executor)
       }
 
       return container.promise as Promise<GetAccessor<T>>
@@ -364,7 +400,7 @@ class BaseScope implements Scope, ScopeInner {
     return await promise
   }
 
-  async release(executor: Executor<EffectOutput | ResourceOutput<any>>): Promise<void> {
+  async release(executor: Executor<any>): Promise<void> {
     this.#ensureNotDisposed()
 
     const container = this.#values.get(executor)
@@ -380,6 +416,26 @@ class BaseScope implements Scope, ScopeInner {
     if (currentCleanup !== undefined) {
       currentCleanup()
     }
+
+    this.#values.delete(executor)
+    this.#cleanups.delete(executor)
+
+    const dependents = this.#dependencyMap.get(executor)
+    if (dependents !== undefined) {
+      for (const dependent of dependents) {
+        await this.release(dependent)
+      }
+    }
+
+    const dependencyEntries = this.#dependencyMap.entries()
+    for (const [key, set] of dependencyEntries) {
+      set.delete(executor)
+      if (set.size === 0) {
+        this.#dependencyMap.delete(key)
+      }
+    }
+
+    this.#dependencyMap.delete(executor)
   }
 
   async dispose(): Promise<void> {

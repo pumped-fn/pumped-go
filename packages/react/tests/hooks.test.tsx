@@ -8,11 +8,11 @@ describe('React Integration', () => {
   it('handles complex state management scenarios', async () => {
     const scope = createScope()
     const countExecutor = provide(() => mutable(0))
-    const derivedCount = derive([countExecutor], ([v]) => v.get() + 2)
-    const wholesum = derive([countExecutor, derivedCount], ([v1, v2]) => v1.get() + v2.get())
+    const derivedCount = derive([countExecutor], ([v]) => v + 2)
+    const wholesum = derive([countExecutor, derivedCount], ([v1, v2]) => v1 + v2)
 
     const updateCount = derive([ref(countExecutor)], ([ref], scope) => {
-      return (value: number) => scope.update(ref.get(), () => value)
+      return (value: number) => scope.update(ref, () => value)
     })
 
     const { result } = renderHook(() => {
