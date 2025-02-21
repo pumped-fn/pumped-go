@@ -24,7 +24,7 @@
     "typecheck:test": "vitest typecheck"
   },
   "devDependencies": {
-    "tsup": "^8.0.0",
+    "tsup": "^8.3.6",
     "typescript": "^5.0.0",
     "vitest": "^1.0.0"
   },
