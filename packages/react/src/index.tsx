@@ -1,7 +1,7 @@
 import type { MutableOutput, Scope, InferOutput } from "@pumped-fn/core";
 import type { GetAccessor } from "@pumped-fn/core";
 import { createScope, type Executor } from "@pumped-fn/core";
-import { createContext, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 
 type ValueEntry = { kind: "value"; value: GetAccessor<unknown> };
 type ErrorEntry = { kind: "error"; error: unknown };
@@ -83,7 +83,7 @@ export function useResolve<T>(executor: Executor<T>): InferOutput<T>;
 export function useResolve<T, K>(executor: Executor<T>, selector: (value: InferOutput<T>) => K): K;
 export function useResolve<T, K = InferOutput<T>>(
   executor: Executor<T>,
-  selector?: (value: InferOutput<T>) => K,
+  selector?: (value: InferOutput<T>) => K
 ): K {
   const scope = useScope();
 
@@ -103,10 +103,14 @@ export function useResolve<T, K = InferOutput<T>>(
     () => entry.value.get() as InferOutput<T>,
 	);
 
-	return useMemo(() => {
-		if (selector === undefined) return resolved as K;
-		return selector(resolved);
-	}, [selector, resolved]);
+	const snapshotRef = useRef<any>();
+	const value = selector ? selector(resolved) : resolved;
+
+	if (!!!snapshotRef.current || (JSON.stringify(value) !== JSON.stringify(snapshotRef.current))) {
+		snapshotRef.current = value;
+	}
+
+	return snapshotRef.current;
 }
 
 export function useUpdate<T>(executor: Executor<MutableOutput<T>>): (updateFn: (current: T) => T) => void {

@@ -6,12 +6,15 @@ import { todoApp } from "./todo.pumped";
 function TodoList() {
   const todos = useResolve(todoApp.todos);
   const setSelectedTodoId = useResolve(todoApp.setSelectedTodoId);
+  const controller = useResolve(todoApp.todosController);
   return (
     <>
       <h1>Todo list</h1>
       {todos.map((todo) => (
         <div key={todo.id} onClick={() => setSelectedTodoId(todo.id)}>
           {todo.content}
+          - 
+          <button onClick={() => controller.removeTodo(todo.id)}>Remove</button>
         </div>
       ))}
     </>
@@ -58,7 +61,11 @@ function TodoForm() {
 }
 
 function CompletedTodoList() {
-  const todos = useResolve(todoApp.todos, useMemo(() => (todos) => todos.filter((todo) => todo.completed), []));
+  const todos = useResolve(
+    todoApp.todos, 
+    useMemo(() => (todos) => todos.filter((todo) => todo.completed), [])
+  );
+
   return (
     <>
     <h1>Completed todos {todos.length}</h1>
