@@ -6,7 +6,6 @@ import { todoApp } from "./todo.pumped";
 function TodoList() {
   const todos = useResolve(todoApp.todos);
   const setSelectedTodoId = useResolve(todoApp.setSelectedTodoId);
-  console.log(todos);
   return (
     <>
       <h1>Todo list</h1>

@@ -10,7 +10,6 @@ describe("React Integration", () => {
     const countExecutor = provide(() => mutable(0));
     const derivedCount = derive([countExecutor], ([v]) => v + 2);
     const wholesum = derive([countExecutor, derivedCount], ([v1, v2]) => {
-      console.log('v1', 'v2', { v1, v2 })
       return v1 + v2
     });
 
@@ -56,6 +55,5 @@ describe("React Integration", () => {
       expect(result.current.wholesumValue).toBe(10);
     });
 
-    console.log(fn.mock.calls)
   });
 });
