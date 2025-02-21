@@ -1,31 +1,7 @@
-import React, { Suspense, useState } from "react";
+import { Suspense, useMemo } from "react";
 import { ScopeProvider, useResolve } from "@pumped-fn/react";
 
-import { counterApp } from "./counter.pumped";
 import { todoApp } from "./todo.pumped";
-
-function App() {
-  const counter = useResolve(counterApp.counter);
-  useResolve(counterApp.timer);
-
-  return (
-    <>
-      <h1>Counter: {counter}</h1>
-    </>
-  );
-}
-
-function ChangeConfig() {
-  const controller = useResolve(counterApp.configController);
-  const config = useResolve(counterApp.config);
-
-  return (
-    <>
-      <input type="number" value={config.increment} onChange={(e) => controller.changeIncrement(+e.target.value)} />
-      <input type="number" value={config.interval} onChange={(e) => controller.changeInterval(+e.target.value)} />
-    </>
-  );
-}
 
 function TodoList() {
   const todos = useResolve(todoApp.todos);
@@ -46,16 +22,20 @@ function TodoList() {
 function TodoDetail() {
   const todo = useResolve(todoApp.selectedTodo);
   const setSelectedTodoId = useResolve(todoApp.setSelectedTodoId);
+  const controller = useResolve(todoApp.todosController);
 
   if (!todo) return null;
 
   return (
     <>
       <h1>{todo.content}</h1>
+      <label>
+        Mark as completed:
+        <input type="checkbox" checked={todo.completed} onChange={() => controller.toggleComplete(todo.id)} />
+      </label>
       <button onClick={() => setSelectedTodoId(null)}>Close</button>
     </>
   );
-  return <>{JSON.stringify(todo)}</>;
 }
 
 function TodoForm() {
@@ -78,19 +58,26 @@ function TodoForm() {
   );
 }
 
+function CompletedTodoList() {
+  const todos = useResolve(todoApp.todos, useMemo(() => (todos) => todos.filter((todo) => todo.completed), []));
+  return (
+    <>
+    <h1>Completed todos {todos.length}</h1>
+      {todos.map((todo) => (
+        <div key={todo.id}>{todo.content}</div>
+      ))}
+    </>
+  );
+}
+
 export default function AppWrapper() {
   return (
     <ScopeProvider>
-      {/* <Suspense>
-        <App />
-      </Suspense>
-      <Suspense>
-        <ChangeConfig />
-      </Suspense> */}
       <Suspense>
         <TodoDetail />
         <TodoList />
         <TodoForm />
+        <CompletedTodoList />
       </Suspense>
     </ScopeProvider>
   );

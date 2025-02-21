@@ -97,11 +97,16 @@ export function useResolve<T, K = InferOutput<T>>(
     throw entry.error;
   }
 
-  return useSyncExternalStore(
+  const resolved = useSyncExternalStore(
     (cb) => scope.scope.on(executor, cb),
-    () => (selector ? selector(entry.value.get() as InferOutput<T>) : (entry.value.get() as InferOutput<T>)) as K,
-    () => (selector ? selector(entry.value.get() as InferOutput<T>) : (entry.value.get() as InferOutput<T>)) as K,
-  );
+    () => entry.value.get() as InferOutput<T>,
+    () => entry.value.get() as InferOutput<T>,
+	);
+
+	return useMemo(() => {
+		if (selector === undefined) return resolved as K;
+		return selector(resolved);
+	}, [selector, resolved]);
 }
 
 export function useUpdate<T>(executor: Executor<MutableOutput<T>>): (updateFn: (current: T) => T) => void {
