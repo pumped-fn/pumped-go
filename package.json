@@ -1,16 +1,16 @@
 {
-	"name": "pumped-fn-monorepo",
-	"private": true,
-	"scripts": {
-		"build": "pnpm -r build",
-		"test": "pnpm -r test",
-		"typecheck": "pnpm -r typecheck",
-		"docs:dev": "mintlify dev",
-		"docs:build": "mintlify build"
-	},
-	"devDependencies": {
-		"@biomejs/biome": "^1.9.4",
-		"typescript": "^5.3.3"
-	},
-	"license": "MIT"
+  "name": "pumped-fn-monorepo",
+  "private": true,
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "docs:dev": "mintlify dev",
+    "docs:build": "mintlify build"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "typescript": "^5.3.3"
+  },
+  "license": "MIT"
 }
