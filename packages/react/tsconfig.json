@@ -1,17 +1,17 @@
 {
-  "compilerOptions": {
-    "target": "ES2020",
-    "module": "ESNext",
-    "lib": ["ES2020", "DOM"],
-    "jsx": "react-jsx",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "declaration": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "paths": {
-      "@pumped-fn/core": ["../core/src"]
-    }
-  },
-  "include": ["src", "tests"]
+	"compilerOptions": {
+		"target": "ES2020",
+		"module": "ESNext",
+		"lib": ["ES2020", "DOM"],
+		"jsx": "react-jsx",
+		"moduleResolution": "bundler",
+		"strict": true,
+		"declaration": true,
+		"esModuleInterop": true,
+		"skipLibCheck": true,
+		"paths": {
+			"@pumped-fn/core": ["../core/src"]
+		}
+	},
+	"include": ["src", "tests"]
 }
