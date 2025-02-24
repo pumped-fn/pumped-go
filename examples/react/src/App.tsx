@@ -1,17 +1,24 @@
 import { Suspense, useMemo } from "react";
-import { ScopeProvider, useResolve } from "@pumped-fn/react";
+import { ScopeProvider, useResolve, useResolveMany } from "@pumped-fn/react";
 
 import { todoApp } from "./todo.pumped";
 
+let rerender = 0
 function TodoList() {
-  const todos = useResolve(todoApp.todos);
-  const setSelectedTodoId = useResolve(todoApp.setSelectedTodoId);
-  const controller = useResolve(todoApp.todosController);
+  const [
+    todos,
+    setSeletectedTodoId,
+    controller
+  ] = useResolveMany(todoApp.todos, todoApp.setSelectedTodoId, todoApp.todosController);
+
+  ++rerender
+  console.log(rerender)
+
   return (
     <>
       <h1>Todo list</h1>
       {todos.map((todo) => (
-        <div key={todo.id} onClick={() => setSelectedTodoId(todo.id)}>
+        <div key={todo.id} onClick={() => setSeletectedTodoId(todo.id)}>
           {todo.content}
           - 
           <button onClick={() => controller.removeTodo(todo.id)}>Remove</button>
@@ -22,9 +29,11 @@ function TodoList() {
 }
 
 function TodoDetail() {
-  const todo = useResolve(todoApp.selectedTodo);
-  const setSelectedTodoId = useResolve(todoApp.setSelectedTodoId);
-  const controller = useResolve(todoApp.todosController);
+  const [todo, setSelectedTodoId, controller] = useResolveMany(
+    todoApp.selectedTodo,
+    todoApp.setSelectedTodoId,
+    todoApp.todosController
+  );
 
   if (!todo) return null;
 
