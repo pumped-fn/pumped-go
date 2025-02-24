@@ -8,7 +8,7 @@ export type {
   MutableOutput,
   Output,
   ResourceOutput,
-  InferOutput
+  InferOutput,
 } from "./core";
 
 export {

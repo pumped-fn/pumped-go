@@ -8,8 +8,7 @@
     "test:watch": "vitest watch"
   },
   "dependencies": {
-    "@pumped-fn/core": "workspace:*",
-    "use-sync-external-store": "^1.4.0"
+    "@pumped-fn/core": "workspace:*"
   },
   "peerDependencies": {
     "react": "^18.0.0"

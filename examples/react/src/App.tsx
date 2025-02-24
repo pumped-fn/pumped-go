@@ -4,20 +4,18 @@ import { ScopeProvider, useResolve, useResolveMany } from "@pumped-fn/react";
 import { Todo, todoApp } from "./todo.pumped";
 
 function TodoList() {
-  const [
-    todos,
-    setSeletectedTodoId,
-    controller
-  ] = useResolveMany(todoApp.todos, todoApp.setSelectedTodoId, todoApp.todosController);
+  const [todos, setSeletectedTodoId, controller] = useResolveMany(
+    todoApp.todos,
+    todoApp.setSelectedTodoId,
+    todoApp.todosController,
+  );
 
   return (
     <>
       <h1>Todo list</h1>
       {todos.map((todo) => (
         <div key={todo.id} onClick={() => setSeletectedTodoId(todo.id)}>
-          {todo.content}
-          - 
-          <button onClick={() => controller.removeTodo(todo.id)}>Remove</button>
+          {todo.content}-<button onClick={() => controller.removeTodo(todo.id)}>Remove</button>
         </div>
       ))}
     </>
@@ -28,7 +26,7 @@ function TodoDetail() {
   const [todo, setSelectedTodoId, controller] = useResolveMany(
     todoApp.selectedTodo,
     todoApp.setSelectedTodoId,
-    todoApp.todosController
+    todoApp.todosController,
   );
 
   if (!todo) return null;
@@ -68,7 +66,7 @@ function TodoForm() {
 function compareTodo(_prev: unknown, _next: unknown): boolean {
   const prev = _prev as Todo[];
   const next = _next as Todo[];
-  
+
   if (prev.length !== next.length) return false;
 
   for (let i = 0; i < prev.length; i++) {
@@ -82,16 +80,16 @@ function compareTodo(_prev: unknown, _next: unknown): boolean {
 
 function CompletedTodoList() {
   const todos = useResolve(
-    todoApp.todos, 
+    todoApp.todos,
     useMemo(() => (todos) => todos.filter((todo) => todo.completed), []),
-    { 
-      equality: compareTodo
-    }
+    {
+      equality: compareTodo,
+    },
   );
-  
+
   return (
     <>
-    <h1>Completed todos {todos.length}</h1>
+      <h1>Completed todos {todos.length}</h1>
       {todos.map((todo) => (
         <div key={todo.id}>{todo.content}</div>
       ))}

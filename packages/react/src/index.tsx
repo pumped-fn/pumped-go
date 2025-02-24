@@ -9,7 +9,6 @@ type ErrorEntry = { kind: "error"; error: unknown };
 type PendingEntry = { kind: "pending"; promise: Promise<unknown> };
 type Entry = ValueEntry | ErrorEntry | PendingEntry;
 
-const isValueEntry = (entry: Entry): entry is ValueEntry => entry.kind === "value";
 const isErrorEntry = (entry: Entry): entry is ErrorEntry => entry.kind === "error";
 const isPendingEntry = (entry: Entry): entry is PendingEntry => entry.kind === "pending";
 
@@ -80,22 +79,22 @@ type ErrorState<T> = { state: "error"; error: T };
 
 export type ResolveState<T> = PendingState<T> | ResolvedState<T> | ErrorState<T>;
 
-type UseResolveOption = {
-  snapshot?: (value: unknown) => unknown
-  equality?: (thisValue: unknown, thatValue: unknown) => boolean
-}
+type UseResolveOption<T> = {
+  snapshot?: (value: T) => T;
+  equality?: (thisValue: T, thatValue: T) => boolean;
+};
 
 export function useResolve<T>(executor: Executor<T>): InferOutput<T>;
 export function useResolve<T, K>(
-  executor: Executor<T>, 
+  executor: Executor<T>,
   selector: (value: InferOutput<T>) => K,
-  options?: UseResolveOption
+  options?: UseResolveOption<T>,
 ): K;
 
 export function useResolve<T, K = InferOutput<T>>(
   executor: Executor<T>,
   selector?: (value: InferOutput<T>) => K,
-  options?: UseResolveOption
+  options?: UseResolveOption<T>,
 ): K {
   const scope = useScope();
 
@@ -109,50 +108,47 @@ export function useResolve<T, K = InferOutput<T>>(
     throw entry.error;
   }
 
-  const valueRef = useRef<any>()
+  const valueRef = useRef<any>();
   if (!valueRef.current) {
-    const value = selector 
-      ? selector(entry.value.get() as InferOutput<T>) 
-      : entry.value.get();
+    const value = selector ? selector(entry.value.get() as InferOutput<T>) : entry.value.get();
 
-    valueRef.current = options?.snapshot ? options.snapshot(value) : value;
+    valueRef.current = options?.snapshot ? options.snapshot(value as any) : value;
   }
 
   return useSyncExternalStore(
-    (cb) => scope.scope.on(
-      executor, 
-      (next) => {
-        const equalityFn = options?.equality ?? Object.is
+    (cb) =>
+      scope.scope.on(executor, (next) => {
+        const equalityFn = options?.equality ?? Object.is;
         const value = selector ? selector(next as any) : next;
 
-        if (!equalityFn(valueRef.current, value)) {
-          valueRef.current = options?.snapshot ? options.snapshot(value) : value;
+        if (!equalityFn(valueRef.current, value as any)) {
+          valueRef.current = options?.snapshot ? options.snapshot(value as any) : value;
           cb();
-          return
+          return;
         }
-    }),
+      }),
     () => valueRef.current,
     () => valueRef.current,
-	);
+  );
 }
 
 export function useResolveMany<T extends Array<unknown>>(
-  ...executors: { [K in keyof T]: Executor<T[K]>}
-): { [K in keyof T]: InferOutput<T[K]>} {
-  const scope = useScope()
-  const entries = [] as CacheEntry[]
+  ...executors: { [K in keyof T]: Executor<T[K]> }
+): { [K in keyof T]: InferOutput<T[K]> } {
+  const scope = useScope();
+  const entries = [] as CacheEntry[];
 
   for (const executor of executors) {
     entries.push(scope.getResolved(executor));
   }
-  
-  const resolvedRef = useRef<ValueEntry[]>(undefined as unknown as [])
+
+  const resolvedRef = useRef<ValueEntry[]>(undefined as unknown as []);
   if (!resolvedRef.current) {
-    resolvedRef.current = []
+    resolvedRef.current = [];
   }
 
   for (const entry of entries) {
-    const state = entry[1]
+    const state = entry[1];
 
     if (isPendingEntry(state)) {
       throw state.promise;
@@ -162,37 +158,37 @@ export function useResolveMany<T extends Array<unknown>>(
       throw state.error;
     }
 
-    resolvedRef.current.push(state)
+    resolvedRef.current.push(state);
   }
 
-  const resultRef = useRef<{ [K in keyof T]: InferOutput<T[K]>}>(undefined as unknown as { [K in keyof T]: InferOutput<T[K]>})
+  const resultRef = useRef<{ [K in keyof T]: InferOutput<T[K]> }>(
+    undefined as unknown as { [K in keyof T]: InferOutput<T[K]> },
+  );
   if (!resultRef.current) {
-    resultRef.current = resolvedRef.current.map(entry => entry.value.get()) as any
+    resultRef.current = resolvedRef.current.map((entry) => entry.value.get()) as any;
   }
 
   return useSyncExternalStore(
     (cb) => {
-      const cleanups = [] as Cleanup[]
+      const cleanups = [] as Cleanup[];
       for (let i = 0; i < entries.length; i++) {
-        const cleanup = scope.scope.on(
-          executors[i], 
-          () => {
-          resultRef.current = resolvedRef.current.map(entry => entry.value.get()) as any
-          cb()
-        })
+        const cleanup = scope.scope.on(executors[i], () => {
+          resultRef.current = resolvedRef.current.map((entry) => entry.value.get()) as any;
+          cb();
+        });
 
-        cleanups.push(cleanup)
+        cleanups.push(cleanup);
       }
 
       return () => {
         for (const cleanup of cleanups) {
-          cleanup()
+          cleanup();
         }
-      }
+      };
     },
     () => resultRef.current,
     () => resultRef.current,
-	);
+  );
 }
 
 export function useUpdate<T>(executor: Executor<MutableOutput<T>>): (updateFn: (current: T) => T) => void {
@@ -204,17 +200,17 @@ export function useUpdate<T>(executor: Executor<MutableOutput<T>>): (updateFn: (
 }
 
 export function useReset(executor: Executor<unknown>): () => void {
-  const scope = useScope()
+  const scope = useScope();
 
   return () => {
-    scope.scope.reset(executor)
-  }
+    scope.scope.reset(executor);
+  };
 }
 
 export function useRelease(executor: Executor<unknown>): () => void {
-  const scope = useScope()
+  const scope = useScope();
 
   return () => {
-    scope.scope.release(executor)
-  }
+    scope.scope.release(executor);
+  };
 }

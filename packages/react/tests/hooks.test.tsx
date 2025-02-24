@@ -10,18 +10,18 @@ describe("React Integration", () => {
     const countExecutor = provide(() => mutable(0));
     const derivedCount = derive([countExecutor], ([v]) => v + 2);
     const wholesum = derive([countExecutor, derivedCount], ([v1, v2]) => {
-      return v1 + v2
+      return v1 + v2;
     });
 
     const updateCount = derive([ref(countExecutor)], ([ref], scope) => {
       return (value: number) => scope.update(ref, () => value);
     });
 
-    const fn = vi.fn()
+    const fn = vi.fn();
 
     const { result } = renderHook(
       () => {
-        fn()
+        fn();
         // Test multiple hooks working together
         const derived = useResolve(derivedCount);
         const update = useResolve(updateCount);
@@ -54,6 +54,5 @@ describe("React Integration", () => {
     await waitFor(() => {
       expect(result.current.wholesumValue).toBe(10);
     });
-
   });
 });
