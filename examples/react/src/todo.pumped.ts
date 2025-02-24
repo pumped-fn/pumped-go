@@ -1,6 +1,6 @@
 import { derive, mutable, provide, ref } from "@pumped-fn/core";
 
-type Todo = {
+export type Todo = {
   id: string;
   content: string;
   completed: boolean;

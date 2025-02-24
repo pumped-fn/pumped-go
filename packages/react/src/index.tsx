@@ -2,7 +2,7 @@ import type { MutableOutput, Scope, InferOutput } from "@pumped-fn/core";
 import type { GetAccessor } from "@pumped-fn/core";
 import { Cleanup } from "@pumped-fn/core";
 import { createScope, type Executor } from "@pumped-fn/core";
-import { createContext, useContext, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { createContext, useContext, useRef, useSyncExternalStore } from "react";
 
 type ValueEntry = { kind: "value"; value: GetAccessor<unknown> };
 type ErrorEntry = { kind: "error"; error: unknown };
@@ -80,11 +80,22 @@ type ErrorState<T> = { state: "error"; error: T };
 
 export type ResolveState<T> = PendingState<T> | ResolvedState<T> | ErrorState<T>;
 
+type UseResolveOption = {
+  snapshot?: (value: unknown) => unknown
+  equality?: (thisValue: unknown, thatValue: unknown) => boolean
+}
+
 export function useResolve<T>(executor: Executor<T>): InferOutput<T>;
-export function useResolve<T, K>(executor: Executor<T>, selector: (value: InferOutput<T>) => K): K;
+export function useResolve<T, K>(
+  executor: Executor<T>, 
+  selector: (value: InferOutput<T>) => K,
+  options?: UseResolveOption
+): K;
+
 export function useResolve<T, K = InferOutput<T>>(
   executor: Executor<T>,
-  selector?: (value: InferOutput<T>) => K
+  selector?: (value: InferOutput<T>) => K,
+  options?: UseResolveOption
 ): K {
   const scope = useScope();
 
@@ -98,20 +109,31 @@ export function useResolve<T, K = InferOutput<T>>(
     throw entry.error;
   }
 
-  const resolved = useSyncExternalStore(
-    (cb) => scope.scope.on(executor, cb),
-    () => entry.value.get() as InferOutput<T>,
-    () => entry.value.get() as InferOutput<T>,
+  const valueRef = useRef<any>()
+  if (!valueRef.current) {
+    const value = selector 
+      ? selector(entry.value.get() as InferOutput<T>) 
+      : entry.value.get();
+
+    valueRef.current = options?.snapshot ? options.snapshot(value) : value;
+  }
+
+  return useSyncExternalStore(
+    (cb) => scope.scope.on(
+      executor, 
+      (next) => {
+        const equalityFn = options?.equality ?? Object.is
+        const value = selector ? selector(next as any) : next;
+
+        if (!equalityFn(valueRef.current, value)) {
+          valueRef.current = options?.snapshot ? options.snapshot(value) : value;
+          cb();
+          return
+        }
+    }),
+    () => valueRef.current,
+    () => valueRef.current,
 	);
-
-	const snapshotRef = useRef<any>();
-	const value = selector ? selector(resolved) : resolved;
-
-	if (!!!snapshotRef.current || (JSON.stringify(value) !== JSON.stringify(snapshotRef.current))) {
-		snapshotRef.current = value;
-	}
-
-	return snapshotRef.current;
 }
 
 export function useResolveMany<T extends Array<unknown>>(
@@ -179,4 +201,20 @@ export function useUpdate<T>(executor: Executor<MutableOutput<T>>): (updateFn: (
   return (updateFn: (current: T) => T) => {
     scope.scope.update(executor, updateFn);
   };
+}
+
+export function useReset(executor: Executor<unknown>): () => void {
+  const scope = useScope()
+
+  return () => {
+    scope.scope.reset(executor)
+  }
+}
+
+export function useRelease(executor: Executor<unknown>): () => void {
+  const scope = useScope()
+
+  return () => {
+    scope.scope.release(executor)
+  }
 }

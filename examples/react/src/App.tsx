@@ -1,18 +1,14 @@
 import { Suspense, useMemo } from "react";
 import { ScopeProvider, useResolve, useResolveMany } from "@pumped-fn/react";
 
-import { todoApp } from "./todo.pumped";
+import { Todo, todoApp } from "./todo.pumped";
 
-let rerender = 0
 function TodoList() {
   const [
     todos,
     setSeletectedTodoId,
     controller
   ] = useResolveMany(todoApp.todos, todoApp.setSelectedTodoId, todoApp.todosController);
-
-  ++rerender
-  console.log(rerender)
 
   return (
     <>
@@ -69,12 +65,30 @@ function TodoForm() {
   );
 }
 
+function compareTodo(_prev: unknown, _next: unknown): boolean {
+  const prev = _prev as Todo[];
+  const next = _next as Todo[];
+  
+  if (prev.length !== next.length) return false;
+
+  for (let i = 0; i < prev.length; i++) {
+    if (prev[i].id !== next[i].id) return false;
+    if (prev[i].content !== next[i].content) return false;
+    if (prev[i].completed !== next[i].completed) return false;
+  }
+
+  return true;
+}
+
 function CompletedTodoList() {
   const todos = useResolve(
     todoApp.todos, 
-    useMemo(() => (todos) => todos.filter((todo) => todo.completed), [])
+    useMemo(() => (todos) => todos.filter((todo) => todo.completed), []),
+    { 
+      equality: compareTodo
+    }
   );
-
+  
   return (
     <>
     <h1>Completed todos {todos.length}</h1>
@@ -92,6 +106,8 @@ export default function AppWrapper() {
         <TodoDetail />
         <TodoList />
         <TodoForm />
+      </Suspense>
+      <Suspense>
         <CompletedTodoList />
       </Suspense>
     </ScopeProvider>
