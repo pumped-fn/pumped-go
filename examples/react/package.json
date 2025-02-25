@@ -8,8 +8,8 @@
     "serve": "vite preview"
   },
   "dependencies": {
-    "@pumped-fn/core": "workspace:*",
-    "@pumped-fn/react": "workspace:*",
+    "@pumped-fn/core": "^0.5.0",
+    "@pumped-fn/react": "^0.5.0",
     "react": "^18.0.0",
     "react-dom": "^18.0.0"
   },
