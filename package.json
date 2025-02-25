@@ -30,6 +30,7 @@
     }
   },
   "dependencies": {
-    "np": "^10.2.0"
+    "release-it": "^18.1.2",
+    "release-it-pnpm": "^4.6.4"
   }
 }
