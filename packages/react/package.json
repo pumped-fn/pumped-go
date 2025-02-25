@@ -1,6 +1,20 @@
 {
   "name": "@pumped-fn/react",
-  "version": "0.5.0",
+  "version": "1.0.0",
+  "description": "React bindings for Pumped Functions",
+  "keywords": [
+    "pumped-fn",
+    "react",
+    "functional programming"
+  ],
+  "author": "Lagz0ne",
+  "license": "MIT",
+  "homepage": "https://github.com/pumped-fn/pumped-fn",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pumped-fn/pumped-fn.git",
+    "directory": "packages/react"
+  },
   "type": "module",
   "scripts": {
     "build": "tsup src/index.tsx --format esm,cjs --dts",
@@ -13,6 +27,9 @@
   "peerDependencies": {
     "react": "^18.0.0"
   },
+  "files": [
+    "dist"
+  ],
   "devDependencies": {
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.3",
