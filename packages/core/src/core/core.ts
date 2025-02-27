@@ -35,35 +35,12 @@ export interface EffectOutput extends Output<never> {
   cleanup: () => void;
 }
 
-export const isOutput = <T>(value: unknown): value is Output<T> =>
-  typeof value === "object" && value !== null && outputSymbol in value;
+import { isEffectOutput, isResouceOutput, isOutput } from "./outputs";
+import { resolve, run, prepare, provide, derive } from "./functions";
 
-export const isResouceOutput = <T>(value: unknown): value is ResourceOutput<T> =>
-  isOutput(value) && value[outputSymbol] === "resource";
+export const executorSymbol = Symbol("jumped-fn.executor");
 
-export const isEffectOutput = (value: unknown): value is EffectOutput =>
-  isOutput(value) && value[outputSymbol] === "effect";
-
-export const mutable = <T>(value: T): MutableOutput<T> => ({
-  value,
-  [outputSymbol]: "mutable",
-});
-
-export const resource = <T>(value: T, cleanup: Cleanup): ResourceOutput<T> => ({
-  value,
-  cleanup,
-  [outputSymbol]: "resource",
-});
-
-export const effect = (cleanup: Cleanup): EffectOutput => ({
-  value: undefined as never,
-  cleanup,
-  [outputSymbol]: "effect",
-});
-
-const executorSymbol = Symbol("jumped-fn.executor");
-
-function isExecutor<T>(value: unknown): value is Executor<T> {
+export function isExecutor<T>(value: unknown): value is Executor<T> {
   return (
     typeof value === "object" && value !== null && executorSymbol in value && (value as Executor<T>)[executorSymbol]
   );
@@ -100,53 +77,6 @@ export interface ScopeInner {
 
 export const createScope = (): Scope => {
   return new BaseScope();
-};
-
-export function resolve<T>(scope: Scope, input: Executor<T>): Promise<GetAccessor<Awaited<T>>>;
-export function resolve<T extends Array<unknown> | object>(
-  scope: Scope,
-  input: { [K in keyof T]: Executor<T[K]> },
-): Promise<{ [K in keyof T]: GetAccessor<Awaited<T[K]>> }>;
-
-export async function resolve<T>(scope: Scope, input: unknown): Promise<unknown> {
-  if (input === undefined || input === null || typeof input !== "object") {
-    throw new Error("Invalid input");
-  }
-
-  if (isExecutor(input)) {
-    return scope.resolve(input);
-  }
-
-  if (Array.isArray(input)) {
-    return Promise.all(input.map((executor) => scope.resolve(executor)));
-  }
-
-  const entries = await Promise.all(
-    Object.entries(input).map(async ([key, executor]) => [key, await scope.resolve(executor)]),
-  );
-  const result = Object.fromEntries(entries);
-  return result;
-}
-
-export const provide = <T>(factory: (scope: Scope) => T): Executor<T> => {
-  return {
-    factory: (_, scope) => factory(scope),
-    get dependencies() {
-      return [];
-    },
-    [executorSymbol]: true,
-  };
-};
-
-export const derive = <T extends Array<unknown> | object, R>(
-  dependencies: { [K in keyof T]: Executor<T[K]> },
-  factory: (dependency: { [K in keyof T]: InferOutput<T[K]> }, scope: Scope) => R | Promise<R>,
-): Executor<R> => {
-  return {
-    factory: (dependencies, scope) => factory(dependencies as any, scope),
-    dependencies,
-    [executorSymbol]: true,
-  };
 };
 
 const refSymbol = Symbol("jumped-fn.ref");
@@ -396,7 +326,7 @@ class BaseScope implements Scope, ScopeInner {
         this.#triggerEvent(executor, value as unknown);
       });
 
-    Object.assign(container, { kind: "pending", promise });
+    Object.assign(container, { kind: "updating", promise });
 
     return await promise;
   }

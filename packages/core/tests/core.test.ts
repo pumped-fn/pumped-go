@@ -1,5 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createScope, provide, derive, mutable, resource, effect, ScopeInner, resolve } from "../src/core/core";
+import {
+  createScope,
+  effect,
+  mutable,
+  resource,
+  provide,
+  derive,
+  resolve,
+  safeResolve,
+  safeRun,
+  run,
+} from "../src/core/index";
+import { ScopeInner } from "../src/core/core";
 
 describe("core", () => {
   it("syntax", async () => {
@@ -101,5 +113,45 @@ describe("core", () => {
 
     await scope.release(ab);
     expect(tree.size).toBe(0);
+  });
+
+  it("can use safeRun and safeResolve", async () => {
+    const scope = createScope();
+
+    const stringValue = provide<string>(() => "hello");
+    const numberValue = provide<number>(() => 1);
+
+    const calculate = await safeRun(scope, [stringValue, numberValue], ([stringValue, numberValue]) => {
+      return stringValue.get() + numberValue.get();
+    });
+
+    const directValue = await run(scope, [stringValue, numberValue], ([stringValue, numberValue]) => {
+      return stringValue.get() + numberValue.get();
+    });
+
+    expect(directValue).toBe("hello1");
+    expect(calculate).toEqual({ status: "ok", value: "hello1" });
+  });
+});
+
+describe("it's all about errors", () => {
+  it("error cannot be hidden", async () => {
+    const scope = createScope();
+    const inner = scope as unknown as ScopeInner;
+
+    const base = provide<string>(() => {
+      throw new Error();
+    });
+    const derived = derive([base], ([v]) => v);
+
+    expect(() => scope.resolve(base)).rejects.toThrowError();
+    expect(() => scope.resolve(derived)).rejects.toThrowError();
+    let result: any = await safeResolve(scope, derived);
+
+    expect(result).toEqual({ status: "error", error: expect.any(Error) });
+    expect(inner.getValues().size).toBe(0);
+
+    result = await safeRun(scope, derived, (v) => v);
+    expect(result).toEqual({ status: "error", error: expect.any(Error) });
   });
 });

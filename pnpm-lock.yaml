@@ -34,11 +34,11 @@ importers:
   examples/react:
     dependencies:
       '@pumped-fn/core':
-        specifier: workspace:*
-        version: link:../../packages/core
+        specifier: ^0.5.0
+        version: 0.5.0
       '@pumped-fn/react':
-        specifier: workspace:*
-        version: link:../../packages/react
+        specifier: ^0.5.0
+        version: 0.5.0(react@18.3.1)
       react:
         specifier: ^18.0.0
         version: 18.3.1
@@ -63,6 +63,28 @@ importers:
         version: 6.1.1(@types/node@22.13.5)(jiti@2.4.2)(yaml@2.7.0)
 
   packages/core:
+    devDependencies:
+      tsup:
+        specifier: ^8.3.6
+        version: 8.3.6(jiti@2.4.2)(postcss@8.5.3)(typescript@5.7.3)(yaml@2.7.0)
+      typescript:
+        specifier: ^5.0.0
+        version: 5.7.3
+      vitest:
+        specifier: ^1.0.0
+        version: 1.6.1(@types/node@22.13.5)(jsdom@26.0.0)
+
+  packages/extra:
+    dependencies:
+      '@pumped-fn/core':
+        specifier: ^0.5.0
+        version: 0.5.0
+      hono:
+        specifier: ^4.7.2
+        version: 4.7.2
+      zod:
+        specifier: ^3.24.2
+        version: 3.24.2
     devDependencies:
       tsup:
         specifier: ^8.3.6
@@ -686,6 +708,11 @@ packages:
   '@pumped-fn/core@0.5.0':
     resolution: {integrity: sha512-y4T9CTh1fRyn/IU2uWSECLga+yEl2OD8H/vRZrYGlKum3fQ3maXYFhT1v2rkxX4KkUBbwQlexdBrVgD4i1K49g==}
     engines: {node: '>=18'}
+
+  '@pumped-fn/react@0.5.0':
+    resolution: {integrity: sha512-sulWuPLqOf3L3rgh/fY+LhMYGh1w5B5Cbf+PIziZzEhp1BBmdft3EpHnaGcwUJMc1jUkhodqjgG6hKXJqNWZfg==}
+    peerDependencies:
+      react: ^18.0.0
 
   '@rollup/rollup-android-arm-eabi@4.34.6':
     resolution: {integrity: sha512-+GcCXtOQoWuC7hhX1P00LqjjIiS/iOouHXhMdiDSnq/1DGTox4SpUvO52Xm+div6+106r+TcvOeo/cxvyEyTgg==}
@@ -1733,6 +1760,10 @@ packages:
   hasown@2.0.2:
     resolution: {integrity: sha512-0hJU9SCPvmMzIBdZFqNPXWa6dqh7WdH0cII9y+CyS8rG3nL48Bclra9HmKhVVUHyPWNH5Y7xDwAB7bfgSjkUMQ==}
     engines: {node: '>= 0.4'}
+
+  hono@4.7.2:
+    resolution: {integrity: sha512-8V5XxoOF6SI12jkHkzX/6aLBMU5GEF5g387EjVSQipS0DlxWgWGSMeEayY3CRBjtTUQYwLHx9JYouWqKzy2Vng==}
+    engines: {node: '>=16.9.0'}
 
   hosted-git-info@7.0.2:
     resolution: {integrity: sha512-puUZAUKT5m8Zzvs72XWy3HtvVbTWljRE66cP60bxJzAqf2DgICo7lYTY2IHUmLnNpjYvw5bvmoHvPc0QO2a62w==}
@@ -3160,6 +3191,9 @@ packages:
     resolution: {integrity: sha512-GQHQqAopRhwU8Kt1DDM8NjibDXHC8eoh1erhGAJPEyveY9qqVeXvVikNKrDz69sHowPMorbPUrH/mx8c50eiBQ==}
     engines: {node: '>=18'}
 
+  zod@3.24.2:
+    resolution: {integrity: sha512-lY7CDW43ECgW9u1TcT3IoXHflywfVqDYze4waEz812jR/bZ8FHDsl7pFQoSZTz5N+2NqRXs8GBwnAwo3ZNxqhQ==}
+
 snapshots:
 
   '@adobe/css-tools@4.4.2': {}
@@ -3671,6 +3705,11 @@ snapshots:
       config-chain: 1.1.13
 
   '@pumped-fn/core@0.5.0': {}
+
+  '@pumped-fn/react@0.5.0(react@18.3.1)':
+    dependencies:
+      '@pumped-fn/core': 0.5.0
+      react: 18.3.1
 
   '@rollup/rollup-android-arm-eabi@4.34.6':
     optional: true
@@ -4764,6 +4803,8 @@ snapshots:
   hasown@2.0.2:
     dependencies:
       function-bind: 1.1.2
+
+  hono@4.7.2: {}
 
   hosted-git-info@7.0.2:
     dependencies:
@@ -6094,3 +6135,5 @@ snapshots:
   yoctocolors-cjs@2.1.2: {}
 
   yoctocolors@2.1.1: {}
+
+  zod@3.24.2: {}

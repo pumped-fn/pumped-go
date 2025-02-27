@@ -13,11 +13,13 @@ export type {
 
 export {
   createScope,
-  provide,
-  derive,
+  ref,
+} from "./core";
+
+export {
+  effect,
   mutable,
   resource,
-  effect,
-  ref,
-  resolve,
-} from "./core";
+} from "./outputs";
+
+export * from "./functions";
