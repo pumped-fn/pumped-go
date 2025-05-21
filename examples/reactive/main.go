@@ -17,7 +17,7 @@ type UserProfile struct {
 
 // UserPreferences represents user preferences
 type UserPreferences struct {
-	Theme       string
+	Theme         string
 	Notifications bool
 }
 
@@ -43,22 +43,21 @@ func main() {
 	userPreferences := core.Provide(func(ctrl core.Controller) (UserPreferences, error) {
 		fmt.Println("Initializing user preferences")
 		return UserPreferences{
-			Theme:       "dark",
+			Theme:         "dark",
 			Notifications: true,
 		}, nil
 	})
 
 	// Create an enhanced user profile executor that depends on profile and preferences
-	enhancedProfile := core.DeriveMulti(
-		[]core.Executor[any]{userProfile, userPreferences},
-		func(deps []any, ctrl core.Controller) (EnhancedUserProfile, error) {
+	// Using DeriveTyped for strongly typed dependencies
+	enhancedProfile := core.DeriveTyped(
+		userProfile,
+		userPreferences,
+		func(profile UserProfile, prefs UserPreferences, ctrl core.Controller) (EnhancedUserProfile, error) {
 			fmt.Println("Computing enhanced profile")
-			profile := deps[0].(UserProfile)
-			preferences := deps[1].(UserPreferences)
-			
 			return EnhancedUserProfile{
 				Profile:     profile,
-				Preferences: preferences,
+				Preferences: prefs,
 				LastActive:  time.Now(),
 			}, nil
 		},
@@ -110,7 +109,7 @@ func main() {
 
 	// Update the user preferences
 	err = scope.Update(context.Background(), userPreferences, UserPreferences{
-		Theme:       "light",
+		Theme:         "light",
 		Notifications: false,
 	})
 	if err != nil {

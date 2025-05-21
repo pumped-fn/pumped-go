@@ -5,41 +5,18 @@ import (
 	"reflect"
 )
 
-// Schema defines validation rules for metadata
-type Schema interface {
-	// Validate validates a value against the schema
-	Validate(value any) (any, error)
-}
-
 // Meta represents a metadata entry
 type Meta struct {
-	Key    string
-	Schema Schema
-	Value  any
-}
-
-// MetaOption is a function that configures a Meta
-type MetaOption func(*Meta)
-
-// WithSchema sets the schema for a Meta
-func WithSchema(schema Schema) MetaOption {
-	return func(m *Meta) {
-		m.Schema = schema
-	}
+	Key   string
+	Value any
 }
 
 // New creates a new Meta
-func New(key string, value any, options ...MetaOption) *Meta {
-	m := &Meta{
+func New(key string, value any) *Meta {
+	return &Meta{
 		Key:   key,
 		Value: value,
 	}
-
-	for _, option := range options {
-		option(m)
-	}
-
-	return m
 }
 
 // Get retrieves a metadata value from a source
@@ -94,18 +71,5 @@ func Find(source map[string]any, key string) []any {
 	}
 
 	return []any{value}
-}
-
-// CustomSchema is a schema that accepts any value
-type CustomSchema struct{}
-
-// Validate validates a value against the schema
-func (s *CustomSchema) Validate(value any) (any, error) {
-	return value, nil
-}
-
-// Custom creates a new custom schema
-func Custom[T any]() Schema {
-	return &CustomSchema{}
 }
 

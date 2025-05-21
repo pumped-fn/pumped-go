@@ -17,16 +17,16 @@ type TodoItem struct {
 
 // TodoState represents the state of the todo list
 type TodoState struct {
-	Items []TodoItem
+	Items  []TodoItem
 	Filter string // "all", "active", "completed"
 }
 
 // TodoController provides methods to manipulate the todo list
 type TodoController struct {
-	AddTodo     func(title string) error
-	ToggleTodo  func(id int) error
-	RemoveTodo  func(id int) error
-	SetFilter   func(filter string) error
+	AddTodo        func(title string) error
+	ToggleTodo     func(id int) error
+	RemoveTodo     func(id int) error
+	SetFilter      func(filter string) error
 	ClearCompleted func() error
 }
 
@@ -63,6 +63,7 @@ func main() {
 	})
 
 	// Create a todo controller that can update the state
+	// Using Static() to get an accessor without reactivity
 	todoController := core.Derive(todoState.Static(), func(stateAccessor core.Accessor[TodoState], ctrl core.Controller) (TodoController, error) {
 		fmt.Println("Creating todo controller")
 		
@@ -139,6 +140,7 @@ func main() {
 	})
 
 	// Create a logger that logs when the filtered todos change
+	// Using Reactive() to automatically update when dependencies change
 	todoLogger := core.Derive(filteredTodos.Reactive(), func(todos []TodoItem, ctrl core.Controller) (any, error) {
 		fmt.Println("Setting up todo logger")
 		

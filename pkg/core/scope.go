@@ -9,19 +9,20 @@ import (
 )
 
 var (
-	ErrScopeDisposed     = errors.New("scope is disposed")
-	ErrExecutorNotFound  = errors.New("executor not found")
+	ErrScopeDisposed      = errors.New("scope is disposed")
+	ErrExecutorNotFound   = errors.New("executor not found")
 	ErrExecutorNotResolved = errors.New("executor not resolved")
 	ErrInvalidExecutorType = errors.New("invalid executor type")
+	ErrTypeMismatch       = errors.New("type mismatch")
 )
 
 // cacheEntry represents a cached value in the scope
 type cacheEntry struct {
-	accessor any
-	value    any
-	err      error
+	accessor  any
+	value     any
+	err       error
 	resolving bool
-	wg       *sync.WaitGroup
+	wg        *sync.WaitGroup
 }
 
 // scopeImpl implements the Scope interface
@@ -480,8 +481,8 @@ func (s *scopeImpl) resolveExecutor[T any](ctx context.Context, executor Executo
 		return zero, errors.New("lazy executors must be accessed through ResolveAccessor")
 	case KindReactive:
 		// For reactive executors, resolve the main executor
-		if reactiveExec, ok := executor.(interface{ main() MainExecutor[T] }); ok {
-			mainExec := reactiveExec.main()
+		if reactiveExec, ok := executor.(interface{ main *mainExecutor[T, any] }); ok {
+			mainExec := reactiveExec.main
 			result, err = s.resolveMainExecutor(ctx, mainExec)
 			
 			// Register for updates from dependencies
@@ -589,30 +590,35 @@ func (s *scopeImpl) resolveDependencies(ctx context.Context, dependencies []any)
 		return results[0].Interface(), nil
 	}
 
-	// Multiple dependencies
-	if reflect.TypeOf(dependencies[0]).Kind() == reflect.Map {
-		// Map dependencies
-		result := reflect.MakeMap(reflect.TypeOf(dependencies[0]))
+	// For multiple dependencies, we need to handle different cases
+	// Check if we have a struct with typed fields
+	if reflect.TypeOf(dependencies[0]).Kind() == reflect.Struct {
+		// Create a new struct with the same type
+		structType := reflect.TypeOf(dependencies[0])
+		result := reflect.New(structType).Elem()
 		
-		for _, dep := range dependencies {
-			mapValue := reflect.ValueOf(dep)
-			for _, key := range mapValue.MapKeys() {
-				depValue := mapValue.MapIndex(key)
-				
-				// Resolve the dependency
-				resolved, err := s.resolveDependencies(ctx, []any{depValue.Interface()})
-				if err != nil {
-					return nil, err
-				}
-				
-				result.SetMapIndex(key, reflect.ValueOf(resolved))
+		// Resolve each field
+		for i := 0; i < structType.NumField(); i++ {
+			field := structType.Field(i)
+			fieldValue := result.Field(i)
+			
+			// Get the dependency for this field
+			dep := dependencies[i]
+			
+			// Resolve the dependency
+			resolved, err := s.resolveDependencies(ctx, []any{dep})
+			if err != nil {
+				return nil, err
 			}
+			
+			// Set the field value
+			fieldValue.Set(reflect.ValueOf(resolved))
 		}
 		
 		return result.Interface(), nil
 	}
 
-	// Array dependencies
+	// Multiple dependencies of the same type (array)
 	result := reflect.MakeSlice(reflect.SliceOf(reflect.TypeOf(dependencies[0])), len(dependencies), len(dependencies))
 	
 	for i, dep := range dependencies {

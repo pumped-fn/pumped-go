@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/pumped-fn/pumped-go/pkg/core"
-	"github.com/pumped-fn/pumped-go/pkg/meta"
 )
 
 func main() {

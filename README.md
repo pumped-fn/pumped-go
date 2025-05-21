@@ -25,10 +25,19 @@ counter := core.Provide(func(ctrl core.Controller) (int, error) {
     return 0, nil
 })
 
-// Create executor with dependencies
+// Create executor with a single dependency
 doubled := core.Derive(counter, func(count int, ctrl core.Controller) (int, error) {
     return count * 2, nil
 })
+
+// Create executor with multiple typed dependencies
+profile := core.DeriveTyped(
+    userProfile,
+    userPreferences,
+    func(profile UserProfile, prefs UserPreferences, ctrl core.Controller) (EnhancedProfile, error) {
+        return EnhancedProfile{Profile: profile, Preferences: prefs}, nil
+    },
+)
 
 // Create executor with metadata
 counter.WithMeta("name", "counter")
@@ -94,8 +103,16 @@ staticCounter := counter.Static()
 - **State management**: `core.Provide(func(ctrl core.Controller) (State, error) { return initialState, nil })`
 - **Derived state**: `core.Derive(state, func(s State, ctrl core.Controller) (TransformedState, error) { return transform(s), nil })`
 - **Controllers**: `core.Derive(state.Static(), func(stateCtl core.Accessor[State], ctrl core.Controller) (Controller, error) { return Controller{Update: func() { stateCtl.Update(ctx, newState) }}, nil })`
-- **Side effects**: `core.Derive([]Executor{dep1, dep2}, func(deps []any, ctrl core.Controller) (any, error) { cleanup := setup(); ctrl.Cleanup(cleanup); return nil, nil })`
+- **Side effects**: `core.Derive(dep.Reactive(), func(value Value, ctrl core.Controller) (any, error) { cleanup := setup(); ctrl.Cleanup(cleanup); return nil, nil })`
 - **Metadata**: `executor.WithMeta("key", value)`
+
+## Type Safety
+
+This Go implementation leverages Go's type system to provide compile-time safety where possible:
+
+- Generic interfaces ensure type safety across the API
+- Strongly-typed `DeriveTyped` functions for multiple dependencies with different types
+- Runtime type checking only when absolutely necessary
 
 ## Tips
 
@@ -103,6 +120,7 @@ staticCounter := counter.Static()
 - Use `.Static()` for controllers that update other values
 - Use `ctrl.Cleanup()` to register cleanup functions
 - Prefer `accessor.Update()` over direct mutation
+- Use `DeriveTyped` for strongly typed dependencies
 
 ## Example
 

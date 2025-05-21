@@ -126,7 +126,7 @@ func Derive[T any, D any](
 	}
 }
 
-// DeriveMulti creates an executor with multiple dependencies
+// DeriveMulti creates an executor with multiple dependencies of the same type
 func DeriveMulti[T any, D any](
 	dependencies []Executor[D],
 	factory func([]D, Controller) (T, error),
@@ -163,6 +163,57 @@ func DeriveMap[T any, K comparable, V any](
 			metadata:     make(map[string]any),
 		},
 		factory: factory,
+	}
+}
+
+// DeriveTyped creates an executor with multiple dependencies of different types
+func DeriveTyped[T any, D1 any, D2 any](
+	dep1 Executor[D1],
+	dep2 Executor[D2],
+	factory func(D1, D2, Controller) (T, error),
+) MainExecutor[T] {
+	return &mainExecutor[T, struct {
+		Dep1 D1
+		Dep2 D2
+	}]{
+		executorBase: executorBase[T]{
+			kind:         KindMain,
+			dependencies: []any{dep1, dep2},
+			metadata:     make(map[string]any),
+		},
+		factory: func(deps struct {
+			Dep1 D1
+			Dep2 D2
+		}, ctrl Controller) (T, error) {
+			return factory(deps.Dep1, deps.Dep2, ctrl)
+		},
+	}
+}
+
+// DeriveTyped3 creates an executor with three dependencies of different types
+func DeriveTyped3[T any, D1 any, D2 any, D3 any](
+	dep1 Executor[D1],
+	dep2 Executor[D2],
+	dep3 Executor[D3],
+	factory func(D1, D2, D3, Controller) (T, error),
+) MainExecutor[T] {
+	return &mainExecutor[T, struct {
+		Dep1 D1
+		Dep2 D2
+		Dep3 D3
+	}]{
+		executorBase: executorBase[T]{
+			kind:         KindMain,
+			dependencies: []any{dep1, dep2, dep3},
+			metadata:     make(map[string]any),
+		},
+		factory: func(deps struct {
+			Dep1 D1
+			Dep2 D2
+			Dep3 D3
+		}, ctrl Controller) (T, error) {
+			return factory(deps.Dep1, deps.Dep2, deps.Dep3, ctrl)
+		},
 	}
 }
 
