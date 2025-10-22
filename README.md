@@ -1,6 +1,6 @@
 # Pumped Go
 
-[![CI](https://github.com/cuongtranba/pumped-go/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/cuongtranba/pumped-go/actions/workflows/ci.yml)
+[![CI](https://github.com/pumped-fn/pumped-go/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pumped-fn/pumped-go/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/pumped-fn/pumped-go/branch/main/graph/badge.svg)](https://codecov.io/gh/pumped-fn/pumped-go)
 [![Go Report Card](https://goreportcard.com/badge/github.com/pumped-fn/pumped-go)](https://goreportcard.com/report/github.com/pumped-fn/pumped-go)
 [![GoDoc](https://pkg.go.dev/badge/github.com/pumped-fn/pumped-go.svg)](https://pkg.go.dev/github.com/pumped-fn/pumped-go)
