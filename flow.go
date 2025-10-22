@@ -2,6 +2,7 @@ package pumped
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"runtime/debug"
 	"sync"
@@ -323,6 +324,7 @@ const (
 	ExecutionStatusRunning ExecutionStatus = iota
 	ExecutionStatusSuccess
 	ExecutionStatusFailed
+	ExecutionStatusCancelled
 )
 
 var (
@@ -341,26 +343,45 @@ var (
 	panicStackTag = NewTag[[]byte]("exec.panic_stack")
 )
 
-func FlowName() Tag[string]          { return flowNameTag }
-func Timeout() Tag[time.Duration]    { return timeoutTag }
-func Retry() Tag[int]                { return retryTag }
-func StartTime() Tag[time.Time]      { return startTimeTag }
-func EndTime() Tag[time.Time]        { return endTimeTag }
-func Status() Tag[ExecutionStatus]   { return statusTag }
-func ErrorTag() Tag[error]           { return errorTag }
-func Input() Tag[any]                { return inputTag }
-func Output() Tag[any]               { return outputTag }
-func Resumed() Tag[bool]             { return resumedTag }
-func CachedOutput() Tag[any]         { return cachedTag }
-func SkipExecution() Tag[bool]       { return skipExecTag }
-func PanicStack() Tag[[]byte]        { return panicStackTag }
+func FlowName() Tag[string]        { return flowNameTag }
+func Timeout() Tag[time.Duration]  { return timeoutTag }
+func Retry() Tag[int]              { return retryTag }
+func StartTime() Tag[time.Time]    { return startTimeTag }
+func EndTime() Tag[time.Time]      { return endTimeTag }
+func Status() Tag[ExecutionStatus] { return statusTag }
+func ErrorTag() Tag[error]         { return errorTag }
+func Input() Tag[any]              { return inputTag }
+func Output() Tag[any]             { return outputTag }
+func Resumed() Tag[bool]           { return resumedTag }
+func CachedOutput() Tag[any]       { return cachedTag }
+func SkipExecution() Tag[bool]     { return skipExecTag }
+func PanicStack() Tag[[]byte]      { return panicStackTag }
 
 func Exec1[R any](e *ExecutionCtx, flow *Flow[R]) (R, *ExecutionCtx, error) {
 	var zero R
 
+	// Check for cancellation before resolving dependencies
+	select {
+	case <-e.ctx.Done():
+		e.Set(endTimeTag, time.Now())
+		e.Set(statusTag, ExecutionStatusCancelled)
+		e.Set(errorTag, e.ctx.Err())
+		return zero, nil, e.ctx.Err()
+	default:
+	}
+
 	for _, dep := range flow.deps {
 		if dep.GetMode() == ModeLazy {
 			continue
+		}
+		// Check for cancellation before each dependency resolution
+		select {
+		case <-e.ctx.Done():
+			e.Set(endTimeTag, time.Now())
+			e.Set(statusTag, ExecutionStatusCancelled)
+			e.Set(errorTag, e.ctx.Err())
+			return zero, nil, e.ctx.Err()
+		default:
 		}
 		_, err := dep.GetExecutor().ResolveAny(e.scope)
 		if err != nil {
@@ -396,7 +417,27 @@ func Exec1[R any](e *ExecutionCtx, flow *Flow[R]) (R, *ExecutionCtx, error) {
 		}
 	}
 
+	// Check for cancellation before executing the flow
+	select {
+	case <-childCtx.ctx.Done():
+		childCtx.Set(endTimeTag, time.Now())
+		childCtx.Set(statusTag, ExecutionStatusCancelled)
+		childCtx.Set(errorTag, childCtx.ctx.Err())
+		return zero, childCtx, childCtx.ctx.Err()
+	default:
+	}
+
 	if skip, ok := childCtx.Get(skipExecTag); ok && skip.(bool) {
+		// Check for cancellation even in skip case
+		select {
+		case <-childCtx.ctx.Done():
+			childCtx.Set(endTimeTag, time.Now())
+			childCtx.Set(statusTag, ExecutionStatusCancelled)
+			childCtx.Set(errorTag, childCtx.ctx.Err())
+			return zero, childCtx, childCtx.ctx.Err()
+		default:
+		}
+
 		if cached, ok := childCtx.Get(cachedTag); ok {
 			childCtx.Set(endTimeTag, time.Now())
 			childCtx.Set(statusTag, ExecutionStatusSuccess)
@@ -417,7 +458,12 @@ func Exec1[R any](e *ExecutionCtx, flow *Flow[R]) (R, *ExecutionCtx, error) {
 
 	childCtx.Set(endTimeTag, time.Now())
 	if err != nil {
-		childCtx.Set(statusTag, ExecutionStatusFailed)
+		// Check if this is a cancellation error
+		if errors.Is(err, context.Canceled) {
+			childCtx.Set(statusTag, ExecutionStatusCancelled)
+		} else {
+			childCtx.Set(statusTag, ExecutionStatusFailed)
+		}
 		childCtx.Set(errorTag, err)
 	} else {
 		childCtx.Set(statusTag, ExecutionStatusSuccess)
@@ -455,10 +501,76 @@ func executeFlow[R any](e *ExecutionCtx, flow *Flow[R]) (result R, err error) {
 		}
 	}()
 
+	// Check for cancellation before executing the factory
+	select {
+	case <-e.ctx.Done():
+		err = e.ctx.Err()
+		e.Set(endTimeTag, time.Now())
+		e.Set(statusTag, ExecutionStatusCancelled)
+		e.Set(errorTag, e.ctx.Err())
+		return
+	default:
+	}
+
 	resolveCtx := &ResolveCtx{
 		scope: e.scope,
 	}
 
-	result, err = flow.factory(e, resolveCtx)
-	return
+	// Execute factory with cancellation monitoring
+	type factoryResult struct {
+		value R
+		err   error
+		panic any
+		stack []byte
+	}
+
+	resultCh := make(chan factoryResult, 1)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				stack := debug.Stack()
+				resultCh <- factoryResult{
+					panic: r,
+					stack: stack,
+				}
+			}
+		}()
+
+		value, err := flow.factory(e, resolveCtx)
+		resultCh <- factoryResult{
+			value: value,
+			err:   err,
+		}
+	}()
+
+	select {
+	case res := <-resultCh:
+		if res.panic != nil {
+			// Panic occurred in factory
+			err = fmt.Errorf("panic in flow: %v", res.panic)
+			e.Set(panicStackTag, res.stack)
+			e.Set(errorTag, err)
+
+			e.scope.mu.RLock()
+			exts := make([]Extension, len(e.scope.extensions))
+			copy(exts, e.scope.extensions)
+			e.scope.mu.RUnlock()
+
+			for _, ext := range exts {
+				ext.OnFlowPanic(e, res.panic, res.stack)
+			}
+			return
+		}
+		// Factory completed normally
+		result = res.value
+		err = res.err
+		return
+	case <-e.ctx.Done():
+		// Context was cancelled
+		err = e.ctx.Err()
+		e.Set(endTimeTag, time.Now())
+		e.Set(statusTag, ExecutionStatusCancelled)
+		e.Set(errorTag, e.ctx.Err())
+		return
+	}
 }

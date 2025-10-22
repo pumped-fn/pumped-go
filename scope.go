@@ -2,6 +2,7 @@ package pumped
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -375,9 +376,42 @@ func (s *Scope) generateExecutionID() string {
 func Exec[R any](s *Scope, ctx context.Context, flow *Flow[R]) (R, *ExecutionCtx, error) {
 	var zero R
 
+	// Check for cancellation before resolving dependencies
+	select {
+	case <-ctx.Done():
+		execCtx := &ExecutionCtx{
+			id:     s.generateExecutionID(),
+			parent: nil,
+			scope:  s,
+			data:   make(map[any]any),
+			ctx:    ctx,
+		}
+		execCtx.Set(endTimeTag, time.Now())
+		execCtx.Set(statusTag, ExecutionStatusCancelled)
+		execCtx.Set(errorTag, ctx.Err())
+		return zero, execCtx, ctx.Err()
+	default:
+	}
+
 	for _, dep := range flow.deps {
 		if dep.GetMode() == ModeLazy {
 			continue
+		}
+		// Check for cancellation before each dependency resolution
+		select {
+		case <-ctx.Done():
+			execCtx := &ExecutionCtx{
+				id:     s.generateExecutionID(),
+				parent: nil,
+				scope:  s,
+				data:   make(map[any]any),
+				ctx:    ctx,
+			}
+			execCtx.Set(endTimeTag, time.Now())
+			execCtx.Set(statusTag, ExecutionStatusCancelled)
+			execCtx.Set(errorTag, ctx.Err())
+			return zero, execCtx, ctx.Err()
+		default:
 		}
 		_, err := dep.GetExecutor().ResolveAny(s)
 		if err != nil {
@@ -413,11 +447,26 @@ func Exec[R any](s *Scope, ctx context.Context, flow *Flow[R]) (R, *ExecutionCtx
 		}
 	}
 
+	// Check for cancellation before executing the flow
+	select {
+	case <-ctx.Done():
+		execCtx.Set(endTimeTag, time.Now())
+		execCtx.Set(statusTag, ExecutionStatusCancelled)
+		execCtx.Set(errorTag, ctx.Err())
+		return zero, execCtx, ctx.Err()
+	default:
+	}
+
 	result, err := executeFlow(execCtx, flow)
 
 	execCtx.Set(endTimeTag, time.Now())
 	if err != nil {
-		execCtx.Set(statusTag, ExecutionStatusFailed)
+		// Check if this is a cancellation error
+		if errors.Is(err, context.Canceled) {
+			execCtx.Set(statusTag, ExecutionStatusCancelled)
+		} else {
+			execCtx.Set(statusTag, ExecutionStatusFailed)
+		}
 		execCtx.Set(errorTag, err)
 	} else {
 		execCtx.Set(statusTag, ExecutionStatusSuccess)
