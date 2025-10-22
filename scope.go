@@ -315,6 +315,7 @@ func (s *Scope) runCleanups(entries []cleanupEntry, exec AnyExecutor, cleanupCon
 			}
 
 			if !handled {
+				// Future: could log or handle unhandled cleanup errors
 			}
 		}
 	}

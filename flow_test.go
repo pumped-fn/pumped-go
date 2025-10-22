@@ -157,22 +157,31 @@ func TestExecutionContextTagLookup(t *testing.T) {
 		childFlow := Flow1(Provide(func(ctx *ResolveCtx) (int, error) {
 			return 2, nil
 		}), func(childCtx *ExecutionCtx, input *Controller[int]) (string, error) {
-			val, ok := childCtx.Get(customTag)
+			var val string
+			_, ok := childCtx.Get(customTag)
 			if ok {
 				t.Error("child should not have its own value")
 			}
 
-			val, ok = childCtx.GetFromParent(customTag)
+			parentVal, ok := childCtx.GetFromParent(customTag)
 			if !ok {
 				t.Fatal("child should find parent value")
+			}
+			val, ok = parentVal.(string)
+			if !ok {
+				t.Fatal("value should be string")
 			}
 			if val != "parent-value" {
 				t.Errorf("expected 'parent-value', got %q", val)
 			}
 
-			val, ok = childCtx.Lookup(customTag)
+			lookupVal, ok := childCtx.Lookup(customTag)
 			if !ok {
 				t.Fatal("lookup should find parent value")
+			}
+			val, ok = lookupVal.(string)
+			if !ok {
+				t.Fatal("lookup value should be string")
 			}
 			if val != "parent-value" {
 				t.Errorf("lookup expected 'parent-value', got %q", val)
