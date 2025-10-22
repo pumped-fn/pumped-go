@@ -78,7 +78,6 @@ func NewScope(opts ...ScopeOption) *Scope {
 		presets:         make(map[AnyExecutor]preset),
 		cleanupRegistry: make(map[AnyExecutor][]cleanupEntry),
 		execTree:        newExecutionTree(1000),
-		idCounter:       0,
 	}
 
 	for _, opt := range opts {
