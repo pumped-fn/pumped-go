@@ -1,0 +1,90 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.out
+coverage.html
+coverage.txt
+*.coverprofile
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Dependency directories
+vendor/
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# GoReleaser
+dist/
+*.tar.gz
+*.zip
+
+# Build artifacts
+*.o
+*.a
+*.so
+bin/
+build/
+
+# Example binaries
+examples/*/health-monitor
+examples/*/http-api
+examples/*/cli-tasks
+examples/*/order-processing
+examples/*/basic
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Log files
+*.log
+
+# Testing
+testdata/output/
+.test/
+
+# Air (live reload)
+tmp/
+.air.toml
+
+# goreleaser
+.goreleaser.yml.bak
+
+# Profile data
+*.prof
+*.pprof
+
+# Database files (for examples)
+*.db
+*.sqlite
+*.sqlite3
+
+# Documentation build
+docs/_build/
+docs/.doctrees/
+
+# Task runner
+.task/
