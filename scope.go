@@ -5,21 +5,22 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 // Scope manages the lifecycle and resolution of executors
 type Scope struct {
 	mu              sync.RWMutex
-	cache           map[AnyExecutor]any
-	tags            map[any]any
+	cache           sync.Map
+	tags            sync.Map
 	downstream      map[AnyExecutor][]reactiveDependent
 	extensions      []Extension
 	presets         map[AnyExecutor]preset
 	cleanupRegistry map[AnyExecutor][]cleanupEntry
 	cleanupMu       sync.RWMutex
 	execTree        *ExecutionTree
-	idCounter       uint64
+	idCounter       atomic.Uint64
 }
 
 type reactiveDependent struct {
@@ -72,8 +73,6 @@ func WithPreset[T any](original *Executor[T], replacement any) ScopeOption {
 // NewScope creates a new scope with optional configuration
 func NewScope(opts ...ScopeOption) *Scope {
 	s := &Scope{
-		cache:           make(map[AnyExecutor]any),
-		tags:            make(map[any]any),
 		downstream:      make(map[AnyExecutor][]reactiveDependent),
 		extensions:      []Extension{},
 		presets:         make(map[AnyExecutor]preset),
@@ -99,12 +98,9 @@ func Accessor[T any](s *Scope, exec *Executor[T]) *Controller[T] {
 
 // Resolve resolves an executor's value (lazily, with caching)
 func Resolve[T any](s *Scope, exec *Executor[T]) (T, error) {
-	s.mu.RLock()
-	if val, ok := s.cache[exec]; ok {
-		s.mu.RUnlock()
+	if val, ok := s.cache.Load(exec); ok {
 		return val.(T), nil
 	}
-	s.mu.RUnlock()
 
 	// Build reactive graph
 	s.mu.Lock()
@@ -127,9 +123,7 @@ func Resolve[T any](s *Scope, exec *Executor[T]) (T, error) {
 	if hasPreset {
 		if preset.isValue {
 			// Value preset - cache and return
-			s.mu.Lock()
-			s.cache[exec] = preset.value
-			s.mu.Unlock()
+			s.cache.Store(exec, preset.value)
 			return preset.value.(T), nil
 		}
 
@@ -140,10 +134,7 @@ func Resolve[T any](s *Scope, exec *Executor[T]) (T, error) {
 			return zero, err
 		}
 
-		s.mu.Lock()
-		s.cache[exec] = val
-		s.mu.Unlock()
-
+		s.cache.Store(exec, val)
 		return val.(T), nil
 	}
 
@@ -194,9 +185,7 @@ func Resolve[T any](s *Scope, exec *Executor[T]) (T, error) {
 		return zero, err
 	}
 
-	s.mu.Lock()
-	s.cache[exec] = result
-	s.mu.Unlock()
+	s.cache.Store(exec, result)
 
 	return result.(T), nil
 }
@@ -223,14 +212,11 @@ func Update[T any](s *Scope, exec *Executor[T], newVal T) error {
 			s.cleanupExecutor(dependent)
 		}
 
-		s.mu.Lock()
-		s.cache[exec] = newVal
+		s.cache.Store(exec, newVal)
 
 		for _, dependent := range toInvalidate {
-			delete(s.cache, dependent)
+			s.cache.Delete(dependent)
 		}
-		s.mu.Unlock()
-
 		return nil, nil
 	}
 
@@ -370,17 +356,12 @@ func (s *Scope) Dispose() error {
 
 // GetTag retrieves a tag value from the scope
 func (s *Scope) GetTag(tag any) (any, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	val, ok := s.tags[tag]
-	return val, ok
+	return s.tags.Load(tag)
 }
 
 // SetTag stores a tag value on the scope
 func (s *Scope) SetTag(tag any, val any) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.tags[tag] = val
+	s.tags.Store(tag, val)
 }
 
 // GetExecutionTree returns the execution tree for querying
@@ -389,10 +370,7 @@ func (s *Scope) GetExecutionTree() *ExecutionTree {
 }
 
 func (s *Scope) generateExecutionID() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.idCounter++
-	return fmt.Sprintf("exec-%d", s.idCounter)
+	return fmt.Sprintf("exec-%d", s.idCounter.Add(1))
 }
 
 func Exec[R any](s *Scope, ctx context.Context, flow *Flow[R]) (R, *ExecutionCtx, error) {
