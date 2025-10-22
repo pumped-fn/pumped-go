@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install devbox
         uses: jetify-com/devbox-install-action@v0.11.0
@@ -36,7 +36,7 @@ jobs:
         # Windows support can be added but devbox works best on Unix-like systems
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install devbox
         uses: jetify-com/devbox-install-action@v0.11.0
@@ -68,7 +68,7 @@ jobs:
     needs: [lint, test]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install devbox
         uses: jetify-com/devbox-install-action@v0.11.0
@@ -87,7 +87,7 @@ jobs:
     needs: [lint, test]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install devbox
         uses: jetify-com/devbox-install-action@v0.11.0
@@ -102,7 +102,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install devbox
         uses: jetify-com/devbox-install-action@v0.11.0
