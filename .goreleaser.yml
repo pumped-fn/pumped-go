@@ -1,0 +1,172 @@
+version: 2
+
+before:
+  hooks:
+    # You may remove this if you don't use go modules.
+    - go mod tidy
+    # You may remove this if you don't need go generate
+    - go generate ./...
+
+builds:
+  # Main library - no binary output needed, but we keep for validation
+  - id: pumped-go
+    skip: true
+    main: .
+    env:
+      - CGO_ENABLED=0
+
+  # Build examples as demonstration binaries
+  - id: example-health-monitor
+    binary: health-monitor
+    main: ./examples/health-monitor
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+  - id: example-http-api
+    binary: http-api
+    main: ./examples/http-api
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+  - id: example-cli-tasks
+    binary: cli-tasks
+    main: ./examples/cli-tasks
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: pumped-go-examples
+    format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+      - examples/**/*.md
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - '^chore:'
+      - 'typo'
+  groups:
+    - title: Features
+      regexp: '^feat:'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^fix:'
+      order: 1
+    - title: Performance Improvements
+      regexp: '^perf:'
+      order: 2
+    - title: Others
+      order: 999
+
+release:
+  github:
+    owner: pumped-fn
+    name: pumped-go
+  draft: false
+  prerelease: auto
+  mode: append
+  header: |
+    ## Pumped Go {{ .Tag }} ({{ .Date }})
+
+    A powerful dependency injection and reactive execution library for Go.
+
+  footer: |
+    ## Installation
+
+    ```bash
+    go get github.com/pumped-fn/pumped-go@{{ .Tag }}
+    ```
+
+    **Full Changelog**: https://github.com/pumped-fn/pumped-go/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+# Announce release
+announce:
+  skip: '{{gt .Patch 0}}'  # Only announce major and minor releases
+
+# Sign artifacts
+signs:
+  - cmd: cosign
+    artifacts: checksum
+    signature: "${artifact}.sig"
+    certificate: "${artifact}.pem"
+    args:
+      - sign-blob
+      - "--output-signature=${signature}"
+      - "--output-certificate=${certificate}"
+      - "${artifact}"
+      - "--yes"
+
+# Docker images (optional - uncomment if needed)
+# dockers:
+#   - image_templates:
+#       - "ghcr.io/pumped-fn/pumped-go:{{ .Tag }}"
+#       - "ghcr.io/pumped-fn/pumped-go:v{{ .Major }}"
+#       - "ghcr.io/pumped-fn/pumped-go:v{{ .Major }}.{{ .Minor }}"
+#       - "ghcr.io/pumped-fn/pumped-go:latest"
+#     dockerfile: Dockerfile
+#     build_flag_templates:
+#       - "--pull"
+#       - "--label=org.opencontainers.image.created={{.Date}}"
+#       - "--label=org.opencontainers.image.title={{.ProjectName}}"
+#       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+#       - "--label=org.opencontainers.image.version={{.Version}}"
