@@ -444,7 +444,11 @@ func Exec1[R any](e *ExecutionCtx, flow *Flow[R]) (R, *ExecutionCtx, error) {
 			childCtx.Set(outputTag, cached)
 
 			for i := len(exts) - 1; i >= 0; i-- {
-				exts[i].OnFlowEnd(childCtx, cached, nil)
+				if err := exts[i].OnFlowEnd(childCtx, cached, nil); err != nil {
+					childCtx.Set(statusTag, ExecutionStatusFailed)
+					childCtx.Set(errorTag, err)
+					return zero, childCtx, err
+				}
 			}
 
 			node := childCtx.finalize()
@@ -496,7 +500,9 @@ func executeFlow[R any](e *ExecutionCtx, flow *Flow[R]) (result R, err error) {
 			e.scope.mu.RUnlock()
 
 			for _, ext := range exts {
-				ext.OnFlowPanic(e, r, stack)
+				if onFlowePanicErr := ext.OnFlowPanic(e, r, stack); onFlowePanicErr != nil {
+					err = errors.Join(err, onFlowePanicErr)
+				}
 			}
 		}
 	}()
@@ -557,7 +563,9 @@ func executeFlow[R any](e *ExecutionCtx, flow *Flow[R]) (result R, err error) {
 			e.scope.mu.RUnlock()
 
 			for _, ext := range exts {
-				ext.OnFlowPanic(e, res.panic, res.stack)
+				if onFlowPanicErr := ext.OnFlowPanic(e, res.panic, res.stack); onFlowPanicErr != nil {
+					err = errors.Join(err, onFlowPanicErr)
+				}
 			}
 			return
 		}

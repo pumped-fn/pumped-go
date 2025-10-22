@@ -47,7 +47,9 @@ func WithScopeTag[T any](tag Tag[T], val T) ScopeOption {
 // WithExtension returns an option that registers an extension to a scope
 func WithExtension(ext Extension) ScopeOption {
 	return func(s *Scope) {
-		s.UseExtension(ext)
+		if err := s.UseExtension(ext); err != nil {
+			panic(err)
+		}
 	}
 }
 
@@ -313,7 +315,7 @@ func (s *Scope) runCleanups(entries []cleanupEntry, exec AnyExecutor, cleanupCon
 					break
 				}
 			}
-
+			//nolint:staticcheck
 			if !handled {
 				// Future: could log or handle unhandled cleanup errors
 			}
