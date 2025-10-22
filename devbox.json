@@ -69,7 +69,9 @@
                 "go build -v ./...",
                 "echo '✅ CI pipeline completed successfully!'"
             ],
-            "security": ["gosec", "-exclude-dir=examples", "-exclude-dir=codegen", "./..."],
+            "security": [
+                "gosec -exclude-dir examples -exclude-dir codegen  ./..."
+            ],
             "vulnerability-check": [
                 "which govulncheck > /dev/null || go install golang.org/x/vuln/cmd/govulncheck@latest",
                 "govulncheck ./..."
