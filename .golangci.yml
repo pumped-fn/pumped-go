@@ -1,52 +1,31 @@
+version: 2
+
 run:
   timeout: 5m
   tests: true
-  modules-download-mode: readonly
-
-output:
-  formats:
-    - format: colored-line-number
-  print-issued-lines: true
-  print-linter-name: true
-  sort-results: true
 
 linters:
   enable:
     - errcheck
-    - gosimple
     - govet
     - ineffassign
     - staticcheck
-    - typecheck
     - unused
-    - gofmt
-    - goimports
     - misspell
     - unconvert
     - unparam
-    - revive
     - gosec
-    - bodyclose
-    - exportloopref
-    - gocritic
-    - gocyclo
-    - godot
-    - goprintffuncname
-    - nilerr
-    - nolintlint
-    - stylecheck
-    - whitespace
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
 
 linters-settings:
   errcheck:
-    check-type-assertions: true
     check-blank: true
-  gofmt:
-    simplify: true
   govet:
     enable-all: true
-    disable:
-      - shadow
   staticcheck:
     checks: ["all"]
   gocyclo:
@@ -54,17 +33,8 @@ linters-settings:
   gocritic:
     enabled-tags:
       - diagnostic
-      - experimental
-      - opinionated
       - performance
       - style
-  revive:
-    rules:
-      - name: exported
-        arguments:
-          - disableStutteringCheck
-  stylecheck:
-    checks: ["all", "-ST1000", "-ST1003"]
   gosec:
     excludes:
       - G404
@@ -73,19 +43,15 @@ issues:
   exclude-use-default: false
   max-issues-per-linter: 0
   max-same-issues: 0
-  new: false
 
   exclude-rules:
     - path: _test\.go
       linters:
         - errcheck
-        - gocyclo
         - gosec
         - unparam
-    - path: examples/
+    - path: examples
       linters:
         - errcheck
         - gosec
-
-severity:
-  default-severity: error
+        - unparam
