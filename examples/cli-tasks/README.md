@@ -20,7 +20,6 @@ main.go                 # Single integration point (scope creation)
 
 1. **Setup Phase** (main.go)
    - Create scope with extensions
-   - Define executor graph (no resolution)
    - Parse command-line arguments
 
 2. **Resolution Phase** (commands/*.go)
@@ -37,11 +36,11 @@ main.go                 # Single integration point (scope creation)
 
 ```go
 // commands/commands.go - Leaf node resolution
-func Add(scope *pumped.Scope, g *graph.Graph, args []string) error {
+func Add(scope *pumped.Scope, args []string) error {
     title := strings.Join(args, " ")
 
     // Resolve ONCE at boundary
-    taskSvc, err := pumped.Resolve(scope, g.TaskService)
+    taskSvc, err := pumped.Resolve(scope, graph.TaskService)
     if err != nil {
         return err
     }
@@ -91,8 +90,7 @@ func TestGraph_Resolves(t *testing.T) {
     scope := pumped.NewScope()
     defer scope.Dispose()
 
-    g := graph.Define()
-    taskSvc, err := pumped.Resolve(scope, g.TaskService)
+    taskSvc, err := pumped.Resolve(scope, graph.TaskService)
     // Assert graph works...
 }
 ```
@@ -103,8 +101,7 @@ func TestAddCommand_Integration(t *testing.T) {
     scope := pumped.NewScope()
     defer scope.Dispose()
 
-    g := graph.Define()
-    err := commands.Add(scope, g, []string{"Test"})
+    err := commands.Add(scope, []string{"Test"})
     // Assert full flow...
 }
 ```
