@@ -22,6 +22,7 @@ type Scope struct {
 	cleanupMu       sync.RWMutex
 	execTree        *ExecutionTree
 	idCounter       atomic.Uint64
+	poolManager     *PoolManager
 }
 
 type reactiveDependent struct {
@@ -81,6 +82,7 @@ func NewScope(opts ...ScopeOption) *Scope {
 		presets:         make(map[AnyExecutor]preset),
 		cleanupRegistry: make(map[AnyExecutor][]cleanupEntry),
 		execTree:        newExecutionTree(1000),
+		poolManager:     GetGlobalPoolManager(),
 	}
 
 	for _, opt := range opts {
@@ -276,7 +278,11 @@ func (s *Scope) registerCleanups(exec AnyExecutor, entries []cleanupEntry) {
 
 	s.cleanupMu.Lock()
 	defer s.cleanupMu.Unlock()
-	s.cleanupRegistry[exec] = entries
+
+	// Make a copy of the cleanup entries to avoid issues with pooling
+	cleanupsCopy := make([]cleanupEntry, len(entries))
+	copy(cleanupsCopy, entries)
+	s.cleanupRegistry[exec] = cleanupsCopy
 }
 
 func (s *Scope) cleanupExecutor(exec AnyExecutor) {
@@ -382,16 +388,11 @@ func Exec[R any](s *Scope, ctx context.Context, flow *Flow[R]) (R, *ExecutionCtx
 	// Check for cancellation before resolving dependencies
 	select {
 	case <-ctx.Done():
-		execCtx := &ExecutionCtx{
-			id:     s.generateExecutionID(),
-			parent: nil,
-			scope:  s,
-			data:   make(map[any]any),
-			ctx:    ctx,
-		}
+		execCtx := s.poolManager.AcquireExecutionCtx(s.generateExecutionID(), nil, s, ctx)
 		execCtx.Set(endTimeTag, time.Now())
 		execCtx.Set(statusTag, ExecutionStatusCancelled)
 		execCtx.Set(errorTag, ctx.Err())
+		s.poolManager.ReleaseExecutionCtx(execCtx)
 		return zero, execCtx, ctx.Err()
 	default:
 	}
@@ -403,16 +404,11 @@ func Exec[R any](s *Scope, ctx context.Context, flow *Flow[R]) (R, *ExecutionCtx
 		// Check for cancellation before each dependency resolution
 		select {
 		case <-ctx.Done():
-			execCtx := &ExecutionCtx{
-				id:     s.generateExecutionID(),
-				parent: nil,
-				scope:  s,
-				data:   make(map[any]any),
-				ctx:    ctx,
-			}
+			execCtx := s.poolManager.AcquireExecutionCtx(s.generateExecutionID(), nil, s, ctx)
 			execCtx.Set(endTimeTag, time.Now())
 			execCtx.Set(statusTag, ExecutionStatusCancelled)
 			execCtx.Set(errorTag, ctx.Err())
+			s.poolManager.ReleaseExecutionCtx(execCtx)
 			return zero, execCtx, ctx.Err()
 		default:
 		}
@@ -422,13 +418,8 @@ func Exec[R any](s *Scope, ctx context.Context, flow *Flow[R]) (R, *ExecutionCtx
 		}
 	}
 
-	execCtx := &ExecutionCtx{
-		id:     s.generateExecutionID(),
-		parent: nil,
-		scope:  s,
-		data:   make(map[any]any),
-		ctx:    ctx,
-	}
+	// Acquire ExecutionCtx from pool
+	execCtx := s.poolManager.AcquireExecutionCtx(s.generateExecutionID(), nil, s, ctx)
 
 	if name, ok := flow.GetTag(flowNameTag); ok {
 		execCtx.Set(flowNameTag, name)
@@ -484,6 +475,9 @@ func Exec[R any](s *Scope, ctx context.Context, flow *Flow[R]) (R, *ExecutionCtx
 
 	node := execCtx.finalize()
 	s.execTree.addNode(node)
+
+	// Release ExecutionCtx back to pool
+	s.poolManager.ReleaseExecutionCtx(execCtx)
 
 	return result, execCtx, err
 }

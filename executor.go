@@ -29,11 +29,10 @@ func (e *Executor[T]) SetTag(tag any, val any) {
 }
 
 func (e *Executor[T]) ResolveAny(s *Scope) (any, error) {
-	ctx := &ResolveCtx{
-		scope:      s,
-		executorID: e,
-		cleanups:   []cleanupEntry{},
-	}
+	// Acquire ResolveCtx from pool
+	ctx := s.poolManager.AcquireResolveCtx(s, e)
+	defer s.poolManager.ReleaseResolveCtx(ctx)
+
 	result, err := e.factory(ctx)
 	if err != nil {
 		return nil, err

@@ -389,13 +389,8 @@ func Exec1[R any](e *ExecutionCtx, flow *Flow[R]) (R, *ExecutionCtx, error) {
 		}
 	}
 
-	childCtx := &ExecutionCtx{
-		id:     e.scope.generateExecutionID(),
-		parent: e,
-		scope:  e.scope,
-		data:   make(map[any]any),
-		ctx:    e.ctx,
-	}
+	// Acquire ExecutionCtx from pool
+	childCtx := e.scope.poolManager.AcquireExecutionCtx(e.scope.generateExecutionID(), e, e.scope, e.ctx)
 
 	if name, ok := flow.GetTag(flowNameTag); ok {
 		childCtx.Set(flowNameTag, name)
@@ -453,6 +448,7 @@ func Exec1[R any](e *ExecutionCtx, flow *Flow[R]) (R, *ExecutionCtx, error) {
 
 			node := childCtx.finalize()
 			e.scope.execTree.addNode(node)
+			e.scope.poolManager.ReleaseExecutionCtx(childCtx)
 
 			return cached.(R), childCtx, nil
 		}
@@ -482,6 +478,7 @@ func Exec1[R any](e *ExecutionCtx, flow *Flow[R]) (R, *ExecutionCtx, error) {
 
 	node := childCtx.finalize()
 	e.scope.execTree.addNode(node)
+	e.scope.poolManager.ReleaseExecutionCtx(childCtx)
 
 	return result, childCtx, err
 }
