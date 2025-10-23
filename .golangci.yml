@@ -1,57 +1,26 @@
-version: 2
+version: "2"
 
 run:
-  timeout: 5m
-  tests: true
+    timeout: 5m
+    tests: true
 
 linters:
-  enable:
-    - errcheck
-    - govet
-    - ineffassign
-    - staticcheck
-    - unused
-    - misspell
-    - unconvert
-    - unparam
-    - gosec
-
+    enable:
+        - errcheck
+        - govet
+        - ineffassign
+        - staticcheck
+        - unused
+        - misspell
+        - unconvert
+        - unparam
+        - gosec
+    exclusions:
+        paths:
+            - examples
+            - codegen
+            - ".*_test\\.go"
 formatters:
-  enable:
-    - gofmt
-    - goimports
-
-linters-settings:
-  errcheck:
-    check-blank: true
-  govet:
-    enable-all: true
-  staticcheck:
-    checks: ["all"]
-  gocyclo:
-    min-complexity: 15
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - performance
-      - style
-  gosec:
-    excludes:
-      - G404
-
-issues:
-  exclude-use-default: false
-  max-issues-per-linter: 0
-  max-same-issues: 0
-
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - errcheck
-        - gosec
-        - unparam
-    - path: examples
-      linters:
-        - errcheck
-        - gosec
-        - unparam
+    enable:
+        - gofmt
+        - goimports

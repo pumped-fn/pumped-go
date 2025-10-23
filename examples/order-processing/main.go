@@ -144,6 +144,8 @@ func printTree(tree *pumped.ExecutionTree, node *pumped.ExecutionNode, depth int
 	status := "unknown"
 	if s, ok := node.GetTag(pumped.Status()); ok {
 		switch s.(pumped.ExecutionStatus) {
+		case pumped.ExecutionStatusCancelled:
+			status = "cancelled"
 		case pumped.ExecutionStatusSuccess:
 			status = "success"
 		case pumped.ExecutionStatusFailed:

@@ -2,7 +2,9 @@ package pumped
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 )
 
 func TestBasicFlowExecution(t *testing.T) {
@@ -195,5 +197,133 @@ func TestExecutionContextTagLookup(t *testing.T) {
 	_, _, err := Exec(scope, context.Background(), parentFlow)
 	if err != nil {
 		t.Fatalf("flow execution failed: %v", err)
+	}
+}
+
+func TestFlowCancellation(t *testing.T) {
+	scope := NewScope()
+	defer scope.Dispose()
+
+	// Create a cancellable context
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Create a flow that takes time to execute
+	slowDependency := Provide(func(ctx *ResolveCtx) (string, error) {
+		return "slow-dependency", nil
+	})
+
+	slowFlow := Flow1(slowDependency, func(execCtx *ExecutionCtx, dep *Controller[string]) (string, error) {
+		// Simulate a long-running operation
+		select {
+		case <-time.After(100 * time.Millisecond):
+			depVal, err := dep.Get()
+			if err != nil {
+				return "", err
+			}
+			return "result-" + depVal, nil
+		case <-execCtx.Context().Done():
+			return "", execCtx.Context().Err()
+		}
+	}, WithFlowTag(FlowName(), "slowFlow"))
+
+	// Cancel the context immediately
+	cancel()
+
+	// Execute the flow - should return cancellation error
+	_, execCtx, err := Exec(scope, ctx, slowFlow)
+
+	if err == nil {
+		t.Fatal("expected cancellation error, got nil")
+	}
+
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled error, got %v", err)
+	}
+
+	if execCtx == nil {
+		t.Fatal("execution context should not be nil")
+	}
+
+	// Check that execution status is set to Cancelled
+	status, ok := execCtx.Get(statusTag)
+	if !ok {
+		t.Fatal("status tag not set")
+	}
+
+	if status != ExecutionStatusCancelled {
+		t.Errorf("expected status Cancelled, got %v", status)
+	}
+
+	// Check that the error is stored in the execution context
+	storedErr, ok := execCtx.Get(errorTag)
+	if !ok {
+		t.Fatal("error tag not set")
+	}
+
+	if !errors.Is(storedErr.(error), context.Canceled) {
+		t.Errorf("expected stored error to be context.Canceled, got %v", storedErr)
+	}
+}
+
+func TestFlowCancellationDuringDependencyResolution(t *testing.T) {
+	scope := NewScope()
+	defer scope.Dispose()
+
+	// Create a cancellable context
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Create dependencies
+	dep1 := Provide(func(ctx *ResolveCtx) (string, error) {
+		// Add a small delay to make cancellation during resolution more likely
+		time.Sleep(50 * time.Millisecond)
+		return "dependency1", nil
+	})
+
+	dep2 := Provide(func(ctx *ResolveCtx) (string, error) {
+		return "dependency2", nil
+	})
+
+	// Create a flow with multiple dependencies
+	flow := Flow2(dep1, dep2, func(execCtx *ExecutionCtx, d1 *Controller[string], d2 *Controller[string]) (string, error) {
+		val1, err := d1.Get()
+		if err != nil {
+			return "", err
+		}
+		val2, err := d2.Get()
+		if err != nil {
+			return "", err
+		}
+		return val1 + "-" + val2, nil
+	}, WithFlowTag(FlowName(), "multiDepFlow"))
+
+	// Cancel context after a short delay (to simulate cancellation during dependency resolution)
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		cancel()
+	}()
+
+	// Execute the flow - should return cancellation error
+	_, execCtx, err := Exec(scope, ctx, flow)
+
+	if err == nil {
+		t.Fatal("expected cancellation error, got nil")
+	}
+
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled error, got %v", err)
+	}
+
+	if execCtx == nil {
+		t.Fatal("execution context should not be nil")
+	}
+
+	// Check execution status
+	status, ok := execCtx.Get(statusTag)
+	if !ok {
+		t.Fatal("status tag not set")
+	}
+
+	if status != ExecutionStatusCancelled {
+		t.Errorf("expected status Cancelled, got %v", status)
 	}
 }

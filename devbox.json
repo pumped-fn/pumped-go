@@ -1,132 +1,109 @@
 {
-  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/main/.schema/devbox.schema.json",
-  "packages": [
-    "go@1.23",
-    "golangci-lint@latest",
-    "goreleaser@latest",
-    "cosign@latest",
-    "gh@latest",
-    "gosec@latest"
-  ],
-  "shell": {
-    "init_hook": [
-      "echo '🚀 Pumped Go Development Environment'",
-      "echo '   Go version: $(go version)'",
-      "echo '   golangci-lint: $(golangci-lint --version 2>/dev/null | head -1 || echo \"not found\")'",
-      "echo ''",
-      "echo 'Available commands:'",
-      "echo '  devbox run setup           # Setup development environment'",
-      "echo '  devbox run deps            # Download dependencies'",
-      "echo '  devbox run test            # Run tests'",
-      "echo '  devbox run test-coverage   # Run tests with coverage'",
-      "echo '  devbox run lint            # Run linters'",
-      "echo '  devbox run lint-fix        # Run linters with auto-fix'",
-      "echo '  devbox run build           # Build library'",
-      "echo '  devbox run build-examples  # Build example applications'",
-      "echo '  devbox run ci              # Run full CI pipeline'",
-      "echo '  devbox run security        # Run security checks'",
-      "echo '  devbox run clean           # Clean build artifacts'",
-      "echo ''"
+    "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/main/.schema/devbox.schema.json",
+    "packages": [
+        "go@1.23",
+        "golangci-lint@latest",
+        "goreleaser@latest",
+        "cosign@latest",
+        "gh@latest",
+        "gosec@latest"
     ],
-    "scripts": {
-      "setup": [
-        "echo 'Setting up development environment...'",
-        "go mod download",
-        "go mod verify",
-        "echo '✅ Setup complete! Use \"devbox run <command>\" to run tasks.'"
-      ],
-      "deps": [
-        "go mod download",
-        "go mod verify"
-      ],
-      "tidy": [
-        "go mod tidy"
-      ],
-      "test": [
-        "CGO_ENABLED=1 go test -v -race ./..."
-      ],
-      "test-coverage": [
-        "CGO_ENABLED=1 go test -v -race -coverprofile=coverage.out -covermode=atomic ./...",
-        "go tool cover -html=coverage.out -o coverage.html",
-        "echo 'Coverage report generated: coverage.html'"
-      ],
-      "coverage": [
-        "CGO_ENABLED=1 go test -v -race -coverprofile=coverage.out -covermode=atomic ./...",
-        "go tool cover -func=coverage.out"
-      ],
-      "lint": [
-        "golangci-lint run --timeout=5m"
-      ],
-      "lint-fix": [
-        "golangci-lint run --fix --timeout=5m"
-      ],
-      "fmt": [
-        "go fmt ./..."
-      ],
-      "vet": [
-        "go vet ./..."
-      ],
-      "build": [
-        "go build -v ./..."
-      ],
-      "build-examples": [
-        "for example in examples/*/; do if [ -f \"${example}main.go\" ]; then echo \"Building ${example}...\"; (cd \"$example\" && go build -v .); fi; done"
-      ],
-      "clean": [
-        "go clean",
-        "rm -f coverage.out coverage.html",
-        "rm -rf dist/"
-      ],
-      "ci": [
-        "echo '🔄 Running CI pipeline...'",
-        "go mod download",
-        "go mod verify",
-        "golangci-lint run --timeout=5m",
-        "CGO_ENABLED=1 go test -v -race ./...",
-        "go build -v ./...",
-        "echo '✅ CI pipeline completed successfully!'"
-      ],
-      "security": [
-        "gosec ./..."
-      ],
-      "vulnerability-check": [
-        "which govulncheck > /dev/null || go install golang.org/x/vuln/cmd/govulncheck@latest",
-        "govulncheck ./..."
-      ],
-      "pre-commit": [
-        "go fmt ./...",
-        "golangci-lint run --timeout=5m",
-        "CGO_ENABLED=1 go test -v -race ./..."
-      ],
-      "release-snapshot": [
-        "go clean",
-        "rm -f coverage.out coverage.html",
-        "rm -rf dist/",
-        "goreleaser release --snapshot --clean --skip=publish"
-      ],
-      "release-test": [
-        "goreleaser check"
-      ],
-      "benchmark": [
-        "go test -bench=. -benchmem ./..."
-      ],
-      "integration-test": [
-        "go test -v -tags=integration ./..."
-      ],
-      "all": [
-        "go clean",
-        "rm -f coverage.out coverage.html",
-        "rm -rf dist/",
-        "go mod download",
-        "go mod verify",
-        "golangci-lint run --timeout=5m",
-        "CGO_ENABLED=1 go test -v -race ./...",
-        "go build -v ./..."
-      ]
+    "shell": {
+        "init_hook": [
+            "echo '🚀 Pumped Go Development Environment'",
+            "echo '   Go version: $(go version)'",
+            "echo '   golangci-lint: $(golangci-lint --version 2>/dev/null | head -1 || echo \"not found\")'",
+            "echo ''",
+            "echo 'Available commands:'",
+            "echo '  devbox run setup           # Setup development environment'",
+            "echo '  devbox run deps            # Download dependencies'",
+            "echo '  devbox run test            # Run tests'",
+            "echo '  devbox run test-coverage   # Run tests with coverage'",
+            "echo '  devbox run lint            # Run linters'",
+            "echo '  devbox run lint-fix        # Run linters with auto-fix'",
+            "echo '  devbox run build           # Build library'",
+            "echo '  devbox run build-examples  # Build example applications'",
+            "echo '  devbox run ci              # Run full CI pipeline'",
+            "echo '  devbox run security        # Run security checks'",
+            "echo '  devbox run clean           # Clean build artifacts'",
+            "echo ''"
+        ],
+        "scripts": {
+            "setup": [
+                "echo 'Setting up development environment...'",
+                "go mod download",
+                "go mod verify",
+                "echo '✅ Setup complete! Use \"devbox run <command>\" to run tasks.'"
+            ],
+            "deps": ["go mod download", "go mod verify"],
+            "tidy": ["go mod tidy"],
+            "test": ["CGO_ENABLED=1 go test -v -race ./..."],
+            "test-coverage": [
+                "CGO_ENABLED=1 go test -v -race -coverprofile=coverage.out -covermode=atomic ./...",
+                "go tool cover -html=coverage.out -o coverage.html",
+                "echo 'Coverage report generated: coverage.html'"
+            ],
+            "coverage": [
+                "CGO_ENABLED=1 go test -v -race -coverprofile=coverage.out -covermode=atomic ./...",
+                "go tool cover -func=coverage.out"
+            ],
+            "lint": ["golangci-lint run --timeout=5m"],
+            "lint-fix": ["golangci-lint run --fix --timeout=5m"],
+            "fmt": ["go fmt ./..."],
+            "vet": ["go vet ./..."],
+            "build": ["go build -v ./..."],
+            "build-examples": [
+                "for example in examples/*/; do if [ -f \"${example}main.go\" ]; then echo \"Building ${example}...\"; (cd \"$example\" && go build -v .); fi; done"
+            ],
+            "clean": [
+                "go clean",
+                "rm -f coverage.out coverage.html",
+                "rm -rf dist/"
+            ],
+            "ci": [
+                "echo '🔄 Running CI pipeline...'",
+                "go mod download",
+                "go mod verify",
+                "golangci-lint run --timeout=5m",
+                "CGO_ENABLED=1 go test -v -race ./...",
+                "go build -v ./...",
+                "echo '✅ CI pipeline completed successfully!'"
+            ],
+            "security": [
+                "gosec -exclude-dir examples -exclude-dir codegen  ./..."
+            ],
+            "vulnerability-check": [
+                "which govulncheck > /dev/null || go install golang.org/x/vuln/cmd/govulncheck@latest",
+                "govulncheck ./..."
+            ],
+            "pre-commit": [
+                "go fmt ./...",
+                "golangci-lint run --timeout=5m",
+                "CGO_ENABLED=1 go test -v -race ./..."
+            ],
+            "release-snapshot": [
+                "go clean",
+                "rm -f coverage.out coverage.html",
+                "rm -rf dist/",
+                "goreleaser release --snapshot --clean --skip=publish"
+            ],
+            "release-test": ["goreleaser check"],
+            "benchmark": ["go test -bench=. -benchmem ./..."],
+            "integration-test": ["go test -v -tags=integration ./..."],
+            "all": [
+                "go clean",
+                "rm -f coverage.out coverage.html",
+                "rm -rf dist/",
+                "go mod download",
+                "go mod verify",
+                "golangci-lint run --timeout=5m",
+                "CGO_ENABLED=1 go test -v -race ./...",
+                "go build -v ./..."
+            ]
+        }
+    },
+    "env": {
+        "GOFLAGS": "-buildvcs=true",
+        "CGO_ENABLED": "0"
     }
-  },
-  "env": {
-    "GOFLAGS": "-buildvcs=true",
-    "CGO_ENABLED": "0"
-  }
 }
