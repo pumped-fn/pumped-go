@@ -2,7 +2,6 @@
 
 [![CI](https://github.com/pumped-fn/pumped-go/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pumped-fn/pumped-go/actions/workflows/ci.yml)
 [![GoDoc](https://pkg.go.dev/badge/github.com/pumped-fn/pumped-go.svg)](https://pkg.go.dev/github.com/pumped-fn/pumped-go)
-[![codecov](https://codecov.io/gh/pumped-fn/pumped-go/graph/badge.svg?token=CODECOV_TOKEN)](https://codecov.io/gh/pumped-fn/pumped-go)
 
 A powerful dependency injection and reactive execution library for Go, inspired by pumped-fn.
 
