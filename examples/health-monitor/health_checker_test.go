@@ -2,16 +2,25 @@ package main
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
+// TestHealthChecker_HTTPCheck tests HTTP health check with a mock server
 func TestHealthChecker_HTTPCheck(t *testing.T) {
+	// Create a test server that returns 200 OK
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
 	checker := NewHealthChecker()
 
 	service := &Service{
 		ID:       "svc-1",
 		Type:     ServiceTypeHTTP,
-		Endpoint: "https://httpbin.org/status/200",
+		Endpoint: server.URL,
 		Timeout:  5000,
 	}
 
@@ -33,13 +42,20 @@ func TestHealthChecker_HTTPCheck(t *testing.T) {
 	}
 }
 
+// TestHealthChecker_HTTPCheckUnhealthy tests HTTP health check with unhealthy status
 func TestHealthChecker_HTTPCheckUnhealthy(t *testing.T) {
+	// Create a test server that returns 500 Internal Server Error
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
 	checker := NewHealthChecker()
 
 	service := &Service{
 		ID:       "svc-1",
 		Type:     ServiceTypeHTTP,
-		Endpoint: "https://httpbin.org/status/500",
+		Endpoint: server.URL,
 		Timeout:  5000,
 	}
 
@@ -57,7 +73,13 @@ func TestHealthChecker_HTTPCheckUnhealthy(t *testing.T) {
 	}
 }
 
+// TestHealthChecker_TCPCheck tests TCP health check
+// This test uses google.com:80 and should be run in integration tests
 func TestHealthChecker_TCPCheck(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping TCP test in short mode (requires external network)")
+	}
+
 	checker := NewHealthChecker()
 
 	service := &Service{
