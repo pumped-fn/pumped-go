@@ -8,7 +8,7 @@ import (
 )
 
 func TestIncidentDetector_StartsIncident(t *testing.T) {
-	g := DefineGraph()
+	
 
 	mockIncidentRepo := NewMockIncidentRepository()
 	mockIncidentRepoExecutor := pumped.Provide(func(ctx *pumped.ResolveCtx) (IncidentRepo, error) {
@@ -16,11 +16,11 @@ func TestIncidentDetector_StartsIncident(t *testing.T) {
 	})
 
 	testScope := pumped.NewScope(
-		pumped.WithPreset(g.IncidentRepo, mockIncidentRepoExecutor),
+		pumped.WithPreset(IncidentRepoExec, mockIncidentRepoExecutor),
 	)
 	defer testScope.Dispose()
 
-	detector, err := pumped.Resolve(testScope, g.IncidentDetector)
+	detector, err := pumped.Resolve(testScope, IncidentDetectorExec)
 	if err != nil {
 		t.Fatalf("failed to resolve incident detector: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestIncidentDetector_StartsIncident(t *testing.T) {
 }
 
 func TestIncidentDetector_ClosesIncidentOnRecovery(t *testing.T) {
-	g := DefineGraph()
+	
 
 	mockIncidentRepo := NewMockIncidentRepository()
 	mockIncidentRepoExecutor := pumped.Provide(func(ctx *pumped.ResolveCtx) (IncidentRepo, error) {
@@ -60,11 +60,11 @@ func TestIncidentDetector_ClosesIncidentOnRecovery(t *testing.T) {
 	})
 
 	testScope := pumped.NewScope(
-		pumped.WithPreset(g.IncidentRepo, mockIncidentRepoExecutor),
+		pumped.WithPreset(IncidentRepoExec, mockIncidentRepoExecutor),
 	)
 	defer testScope.Dispose()
 
-	detector, err := pumped.Resolve(testScope, g.IncidentDetector)
+	detector, err := pumped.Resolve(testScope, IncidentDetectorExec)
 	if err != nil {
 		t.Fatalf("failed to resolve incident detector: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestIncidentDetector_ClosesIncidentOnRecovery(t *testing.T) {
 }
 
 func TestIncidentDetector_IncrementsFailCount(t *testing.T) {
-	g := DefineGraph()
+	
 
 	mockIncidentRepo := NewMockIncidentRepository()
 	mockIncidentRepoExecutor := pumped.Provide(func(ctx *pumped.ResolveCtx) (IncidentRepo, error) {
@@ -117,11 +117,11 @@ func TestIncidentDetector_IncrementsFailCount(t *testing.T) {
 	})
 
 	testScope := pumped.NewScope(
-		pumped.WithPreset(g.IncidentRepo, mockIncidentRepoExecutor),
+		pumped.WithPreset(IncidentRepoExec, mockIncidentRepoExecutor),
 	)
 	defer testScope.Dispose()
 
-	detector, err := pumped.Resolve(testScope, g.IncidentDetector)
+	detector, err := pumped.Resolve(testScope, IncidentDetectorExec)
 	if err != nil {
 		t.Fatalf("failed to resolve incident detector: %v", err)
 	}

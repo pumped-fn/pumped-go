@@ -8,7 +8,7 @@ import (
 )
 
 func TestServiceRepository_Integration(t *testing.T) {
-	g := DefineGraph()
+	
 
 	testConfig := &Config{
 		DBPath:     ":memory:",
@@ -17,11 +17,11 @@ func TestServiceRepository_Integration(t *testing.T) {
 	}
 
 	testScope := pumped.NewScope(
-		pumped.WithPreset(g.Config, testConfig),
+		pumped.WithPreset(ConfigExec, testConfig),
 	)
 	defer testScope.Dispose()
 
-	serviceRepo, err := pumped.Resolve(testScope, g.ServiceRepo)
+	serviceRepo, err := pumped.Resolve(testScope, ServiceRepoExec)
 	if err != nil {
 		t.Fatalf("failed to resolve service repo: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestServiceRepository_Integration(t *testing.T) {
 }
 
 func TestHealthCheckRepository_Integration(t *testing.T) {
-	g := DefineGraph()
+	
 
 	testConfig := &Config{
 		DBPath:     ":memory:",
@@ -105,11 +105,11 @@ func TestHealthCheckRepository_Integration(t *testing.T) {
 	}
 
 	testScope := pumped.NewScope(
-		pumped.WithPreset(g.Config, testConfig),
+		pumped.WithPreset(ConfigExec, testConfig),
 	)
 	defer testScope.Dispose()
 
-	healthRepo, err := pumped.Resolve(testScope, g.HealthRepo)
+	healthRepo, err := pumped.Resolve(testScope, HealthRepoExec)
 	if err != nil {
 		t.Fatalf("failed to resolve health repo: %v", err)
 	}
@@ -168,7 +168,7 @@ func TestHealthCheckRepository_Integration(t *testing.T) {
 }
 
 func TestIncidentRepository_Integration(t *testing.T) {
-	g := DefineGraph()
+	
 
 	testConfig := &Config{
 		DBPath:     ":memory:",
@@ -177,11 +177,11 @@ func TestIncidentRepository_Integration(t *testing.T) {
 	}
 
 	testScope := pumped.NewScope(
-		pumped.WithPreset(g.Config, testConfig),
+		pumped.WithPreset(ConfigExec, testConfig),
 	)
 	defer testScope.Dispose()
 
-	incidentRepo, err := pumped.Resolve(testScope, g.IncidentRepo)
+	incidentRepo, err := pumped.Resolve(testScope, IncidentRepoExec)
 	if err != nil {
 		t.Fatalf("failed to resolve incident repo: %v", err)
 	}

@@ -7,8 +7,6 @@ import (
 )
 
 func TestGraph_ConfigReactivity(t *testing.T) {
-	g := DefineGraph()
-
 	initialConfig := &Config{
 		DBPath:     ":memory:",
 		ServerPort: 8080,
@@ -16,16 +14,16 @@ func TestGraph_ConfigReactivity(t *testing.T) {
 	}
 
 	testScope := pumped.NewScope(
-		pumped.WithPreset(g.Config, initialConfig),
+		pumped.WithPreset(ConfigExec, initialConfig),
 	)
 	defer testScope.Dispose()
 
-	db1, err := pumped.Resolve(testScope, g.DB)
+	db1, err := pumped.Resolve(testScope, DBExec)
 	if err != nil {
 		t.Fatalf("failed to resolve initial DB: %v", err)
 	}
 
-	logger1, err := pumped.Resolve(testScope, g.Logger)
+	logger1, err := pumped.Resolve(testScope, LoggerExec)
 	if err != nil {
 		t.Fatalf("failed to resolve initial logger: %v", err)
 	}
@@ -34,7 +32,7 @@ func TestGraph_ConfigReactivity(t *testing.T) {
 		t.Errorf("expected initial logger level to be Info, got %v", logger1.level)
 	}
 
-	configAcc := pumped.Accessor(testScope, g.Config)
+	configAcc := pumped.Accessor(testScope, ConfigExec)
 	newConfig := &Config{
 		DBPath:     ":memory:",
 		ServerPort: 9090,
@@ -46,12 +44,12 @@ func TestGraph_ConfigReactivity(t *testing.T) {
 		t.Fatalf("failed to update config: %v", err)
 	}
 
-	db2, err := pumped.Resolve(testScope, g.DB)
+	db2, err := pumped.Resolve(testScope, DBExec)
 	if err != nil {
 		t.Fatalf("failed to resolve updated DB: %v", err)
 	}
 
-	logger2, err := pumped.Resolve(testScope, g.Logger)
+	logger2, err := pumped.Resolve(testScope, LoggerExec)
 	if err != nil {
 		t.Fatalf("failed to resolve updated logger: %v", err)
 	}
@@ -70,8 +68,6 @@ func TestGraph_ConfigReactivity(t *testing.T) {
 }
 
 func TestGraph_AllComponentsResolve(t *testing.T) {
-	g := DefineGraph()
-
 	testConfig := &Config{
 		DBPath:     ":memory:",
 		ServerPort: 8080,
@@ -79,7 +75,7 @@ func TestGraph_AllComponentsResolve(t *testing.T) {
 	}
 
 	testScope := pumped.NewScope(
-		pumped.WithPreset(g.Config, testConfig),
+		pumped.WithPreset(ConfigExec, testConfig),
 	)
 	defer testScope.Dispose()
 
@@ -88,47 +84,47 @@ func TestGraph_AllComponentsResolve(t *testing.T) {
 		fn   func() error
 	}{
 		{"Logger", func() error {
-			_, err := pumped.Resolve(testScope, g.Logger)
+			_, err := pumped.Resolve(testScope, LoggerExec)
 			return err
 		}},
 		{"DB", func() error {
-			_, err := pumped.Resolve(testScope, g.DB)
+			_, err := pumped.Resolve(testScope, DBExec)
 			return err
 		}},
 		{"ServiceRepo", func() error {
-			_, err := pumped.Resolve(testScope, g.ServiceRepo)
+			_, err := pumped.Resolve(testScope, ServiceRepoExec)
 			return err
 		}},
 		{"HealthRepo", func() error {
-			_, err := pumped.Resolve(testScope, g.HealthRepo)
+			_, err := pumped.Resolve(testScope, HealthRepoExec)
 			return err
 		}},
 		{"IncidentRepo", func() error {
-			_, err := pumped.Resolve(testScope, g.IncidentRepo)
+			_, err := pumped.Resolve(testScope, IncidentRepoExec)
 			return err
 		}},
 		{"HealthChecker", func() error {
-			_, err := pumped.Resolve(testScope, g.HealthChecker)
+			_, err := pumped.Resolve(testScope, HealthCheckerExec)
 			return err
 		}},
 		{"IncidentDetector", func() error {
-			_, err := pumped.Resolve(testScope, g.IncidentDetector)
+			_, err := pumped.Resolve(testScope, IncidentDetectorExec)
 			return err
 		}},
 		{"Scheduler", func() error {
-			_, err := pumped.Resolve(testScope, g.Scheduler)
+			_, err := pumped.Resolve(testScope, SchedulerExec)
 			return err
 		}},
 		{"ServiceHandler", func() error {
-			_, err := pumped.Resolve(testScope, g.ServiceHandler)
+			_, err := pumped.Resolve(testScope, ServiceHandlerExec)
 			return err
 		}},
 		{"HealthHandler", func() error {
-			_, err := pumped.Resolve(testScope, g.HealthHandler)
+			_, err := pumped.Resolve(testScope, HealthHandlerExec)
 			return err
 		}},
 		{"IncidentHandler", func() error {
-			_, err := pumped.Resolve(testScope, g.IncidentHandler)
+			_, err := pumped.Resolve(testScope, IncidentHandlerExec)
 			return err
 		}},
 	}

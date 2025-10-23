@@ -11,35 +11,33 @@ import (
 )
 
 func main() {
-	g := DefineGraph()
-
 	scope := pumped.NewScope()
 
-	logger, err := pumped.Resolve(scope, g.Logger)
+	logger, err := pumped.Resolve(scope, LoggerExec)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to resolve logger: %v\n", err)
 		os.Exit(1)
 	}
 
-	_, err = pumped.Resolve(scope, g.Scheduler)
+	_, err = pumped.Resolve(scope, SchedulerExec)
 	if err != nil {
 		logger.Error("failed to resolve scheduler: %v", err)
 		os.Exit(1)
 	}
 
-	serviceHandler, err := pumped.Resolve(scope, g.ServiceHandler)
+	serviceHandler, err := pumped.Resolve(scope, ServiceHandlerExec)
 	if err != nil {
 		logger.Error("failed to resolve service handler: %v", err)
 		os.Exit(1)
 	}
 
-	healthHandler, err := pumped.Resolve(scope, g.HealthHandler)
+	healthHandler, err := pumped.Resolve(scope, HealthHandlerExec)
 	if err != nil {
 		logger.Error("failed to resolve health handler: %v", err)
 		os.Exit(1)
 	}
 
-	incidentHandler, err := pumped.Resolve(scope, g.IncidentHandler)
+	incidentHandler, err := pumped.Resolve(scope, IncidentHandlerExec)
 	if err != nil {
 		logger.Error("failed to resolve incident handler: %v", err)
 		os.Exit(1)

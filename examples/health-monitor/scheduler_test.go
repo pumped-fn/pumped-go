@@ -9,7 +9,7 @@ import (
 )
 
 func TestScheduler_ExecutesHealthChecks(t *testing.T) {
-	g := DefineGraph()
+	
 
 	mockServiceRepo := NewMockServiceRepository()
 	mockHealthRepo := NewMockHealthCheckRepository()
@@ -38,13 +38,13 @@ func TestScheduler_ExecutesHealthChecks(t *testing.T) {
 	})
 
 	testScope := pumped.NewScope(
-		pumped.WithPreset(g.ServiceRepo, mockServiceRepoExecutor),
-		pumped.WithPreset(g.HealthRepo, mockHealthRepoExecutor),
-		pumped.WithPreset(g.Logger, mockLoggerExecutor),
+		pumped.WithPreset(ServiceRepoExec, mockServiceRepoExecutor),
+		pumped.WithPreset(HealthRepoExec, mockHealthRepoExecutor),
+		pumped.WithPreset(LoggerExec, mockLoggerExecutor),
 	)
 	defer testScope.Dispose()
 
-	scheduler, err := pumped.Resolve(testScope, g.Scheduler)
+	scheduler, err := pumped.Resolve(testScope, SchedulerExec)
 	if err != nil {
 		t.Fatalf("failed to resolve scheduler: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestScheduler_ExecutesHealthChecks(t *testing.T) {
 }
 
 func TestScheduler_StopsGracefully(t *testing.T) {
-	g := DefineGraph()
+	
 
 	mockServiceRepo := NewMockServiceRepository()
 	mockHealthRepo := NewMockHealthCheckRepository()
@@ -81,13 +81,13 @@ func TestScheduler_StopsGracefully(t *testing.T) {
 	})
 
 	testScope := pumped.NewScope(
-		pumped.WithPreset(g.ServiceRepo, mockServiceRepoExecutor),
-		pumped.WithPreset(g.HealthRepo, mockHealthRepoExecutor),
-		pumped.WithPreset(g.Logger, mockLoggerExecutor),
+		pumped.WithPreset(ServiceRepoExec, mockServiceRepoExecutor),
+		pumped.WithPreset(HealthRepoExec, mockHealthRepoExecutor),
+		pumped.WithPreset(LoggerExec, mockLoggerExecutor),
 	)
 	defer testScope.Dispose()
 
-	scheduler, err := pumped.Resolve(testScope, g.Scheduler)
+	scheduler, err := pumped.Resolve(testScope, SchedulerExec)
 	if err != nil {
 		t.Fatalf("failed to resolve scheduler: %v", err)
 	}
