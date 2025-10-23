@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/pumped-fn/pumped-go/examples/http-api/graph"
 	"github.com/pumped-fn/pumped-go/examples/http-api/handlers"
 
 	pumped "github.com/pumped-fn/pumped-go"
@@ -23,12 +22,14 @@ func main() {
 	scope := pumped.NewScope(
 		pumped.WithExtension(extensions.NewLoggingExtension()),
 	)
-	defer scope.Dispose()
-
-	g := graph.Define()
+	defer func() {
+		if err := scope.Dispose(); err != nil {
+			log.Printf("Failed to dispose scope: %v", err)
+		}
+	}()
 
 	mux := http.NewServeMux()
-	handlers.Register(mux, scope, g)
+	handlers.Register(mux, scope)
 
 	srv := &http.Server{
 		Addr:         ":8080",
@@ -55,10 +56,6 @@ func main() {
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Printf("Server shutdown error: %v", err)
-	}
-
-	if err := scope.Dispose(); err != nil {
-		log.Printf("Scope disposal error: %v", err)
 	}
 
 	fmt.Println("Server stopped")

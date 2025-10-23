@@ -6,33 +6,15 @@ import (
 	pumped "github.com/pumped-fn/pumped-go"
 )
 
-type Graph struct {
-	Config *pumped.Executor[*Config]
-	Logger *pumped.Executor[*Logger]
-
-	DB *pumped.Executor[*sql.DB]
-
-	ServiceRepo  *pumped.Executor[ServiceRepo]
-	HealthRepo   *pumped.Executor[HealthCheckRepo]
-	IncidentRepo *pumped.Executor[IncidentRepo]
-
-	HealthChecker    *pumped.Executor[*HealthChecker]
-	IncidentDetector *pumped.Executor[*IncidentDetector]
-
-	Scheduler *pumped.Executor[*Scheduler]
-
-	ServiceHandler  *pumped.Executor[*ServiceHandler]
-	HealthHandler   *pumped.Executor[*HealthHandler]
-	IncidentHandler *pumped.Executor[*IncidentHandler]
-}
-
-func DefineGraph() *Graph {
-	config := pumped.Provide(func(ctx *pumped.ResolveCtx) (*Config, error) {
+var (
+	// Configuration (no dependencies)
+	ConfigExec = pumped.Provide(func(ctx *pumped.ResolveCtx) (*Config, error) {
 		return DefaultConfig(), nil
 	})
 
-	logger := pumped.Derive1(
-		config.Reactive(),
+	// Infrastructure - Logger
+	LoggerExec = pumped.Derive1(
+		ConfigExec.Reactive(),
 		func(ctx *pumped.ResolveCtx, cfgCtrl *pumped.Controller[*Config]) (*Logger, error) {
 			cfg, err := cfgCtrl.Get()
 			if err != nil {
@@ -42,8 +24,9 @@ func DefineGraph() *Graph {
 		},
 	)
 
-	db := pumped.Derive1(
-		config.Reactive(),
+	// Infrastructure - Database
+	DBExec = pumped.Derive1(
+		ConfigExec.Reactive(),
 		func(ctx *pumped.ResolveCtx, cfgCtrl *pumped.Controller[*Config]) (*sql.DB, error) {
 			cfg, err := cfgCtrl.Get()
 			if err != nil {
@@ -62,8 +45,9 @@ func DefineGraph() *Graph {
 		},
 	)
 
-	serviceRepo := pumped.Derive1(
-		db,
+	// Repositories
+	ServiceRepoExec = pumped.Derive1(
+		DBExec,
 		func(ctx *pumped.ResolveCtx, dbCtrl *pumped.Controller[*sql.DB]) (ServiceRepo, error) {
 			database, err := dbCtrl.Get()
 			if err != nil {
@@ -73,8 +57,8 @@ func DefineGraph() *Graph {
 		},
 	)
 
-	healthRepo := pumped.Derive1(
-		db,
+	HealthRepoExec = pumped.Derive1(
+		DBExec,
 		func(ctx *pumped.ResolveCtx, dbCtrl *pumped.Controller[*sql.DB]) (HealthCheckRepo, error) {
 			database, err := dbCtrl.Get()
 			if err != nil {
@@ -84,8 +68,8 @@ func DefineGraph() *Graph {
 		},
 	)
 
-	incidentRepo := pumped.Derive1(
-		db,
+	IncidentRepoExec = pumped.Derive1(
+		DBExec,
 		func(ctx *pumped.ResolveCtx, dbCtrl *pumped.Controller[*sql.DB]) (IncidentRepo, error) {
 			database, err := dbCtrl.Get()
 			if err != nil {
@@ -95,12 +79,13 @@ func DefineGraph() *Graph {
 		},
 	)
 
-	healthChecker := pumped.Provide(func(ctx *pumped.ResolveCtx) (*HealthChecker, error) {
+	// Core Services
+	HealthCheckerExec = pumped.Provide(func(ctx *pumped.ResolveCtx) (*HealthChecker, error) {
 		return NewHealthChecker(), nil
 	})
 
-	incidentDetector := pumped.Derive1(
-		incidentRepo,
+	IncidentDetectorExec = pumped.Derive1(
+		IncidentRepoExec,
 		func(ctx *pumped.ResolveCtx, repoCtrl *pumped.Controller[IncidentRepo]) (*IncidentDetector, error) {
 			repo, err := repoCtrl.Get()
 			if err != nil {
@@ -110,12 +95,12 @@ func DefineGraph() *Graph {
 		},
 	)
 
-	schedulerExec := pumped.Derive5(
-		serviceRepo,
-		healthRepo,
-		healthChecker,
-		incidentDetector,
-		logger,
+	SchedulerExec = pumped.Derive5(
+		ServiceRepoExec,
+		HealthRepoExec,
+		HealthCheckerExec,
+		IncidentDetectorExec,
+		LoggerExec,
 		func(ctx *pumped.ResolveCtx,
 			srCtrl *pumped.Controller[ServiceRepo],
 			hrCtrl *pumped.Controller[HealthCheckRepo],
@@ -140,9 +125,10 @@ func DefineGraph() *Graph {
 		},
 	)
 
-	serviceHandler := pumped.Derive2(
-		serviceRepo,
-		healthRepo,
+	// HTTP Handlers
+	ServiceHandlerExec = pumped.Derive2(
+		ServiceRepoExec,
+		HealthRepoExec,
 		func(ctx *pumped.ResolveCtx,
 			srCtrl *pumped.Controller[ServiceRepo],
 			hrCtrl *pumped.Controller[HealthCheckRepo]) (*ServiceHandler, error) {
@@ -152,10 +138,10 @@ func DefineGraph() *Graph {
 		},
 	)
 
-	healthHandler := pumped.Derive3(
-		serviceRepo,
-		healthRepo,
-		healthChecker,
+	HealthHandlerExec = pumped.Derive3(
+		ServiceRepoExec,
+		HealthRepoExec,
+		HealthCheckerExec,
 		func(ctx *pumped.ResolveCtx,
 			srCtrl *pumped.Controller[ServiceRepo],
 			hrCtrl *pumped.Controller[HealthCheckRepo],
@@ -167,26 +153,11 @@ func DefineGraph() *Graph {
 		},
 	)
 
-	incidentHandler := pumped.Derive1(
-		incidentRepo,
+	IncidentHandlerExec = pumped.Derive1(
+		IncidentRepoExec,
 		func(ctx *pumped.ResolveCtx, irCtrl *pumped.Controller[IncidentRepo]) (*IncidentHandler, error) {
 			ir, _ := irCtrl.Get()
 			return NewIncidentHandler(ir), nil
 		},
 	)
-
-	return &Graph{
-		Config:           config,
-		Logger:           logger,
-		DB:               db,
-		ServiceRepo:      serviceRepo,
-		HealthRepo:       healthRepo,
-		IncidentRepo:     incidentRepo,
-		HealthChecker:    healthChecker,
-		IncidentDetector: incidentDetector,
-		Scheduler:        schedulerExec,
-		ServiceHandler:   serviceHandler,
-		HealthHandler:    healthHandler,
-		IncidentHandler:  incidentHandler,
-	}
-}
+)

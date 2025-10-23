@@ -7,29 +7,24 @@ import (
 	pumped "github.com/pumped-fn/pumped-go"
 )
 
-type Graph struct {
-	Config      *pumped.Executor[*Config]
-	Storage     *pumped.Executor[storage.Storage]
-	TaskService *pumped.Executor[*services.TaskService]
-	StatsService *pumped.Executor[*services.StatsService]
-}
-
-type Config struct {
+type ConfigType struct {
 	StorageType string
 	FilePath    string
 }
 
-func Define() *Graph {
-	config := pumped.Provide(func(ctx *pumped.ResolveCtx) (*Config, error) {
-		return &Config{
+var (
+	// Configuration (no dependencies)
+	Config = pumped.Provide(func(ctx *pumped.ResolveCtx) (*ConfigType, error) {
+		return &ConfigType{
 			StorageType: "memory",
 			FilePath:    "tasks.json",
 		}, nil
 	})
 
-	storageExec := pumped.Derive1(
-		config,
-		func(ctx *pumped.ResolveCtx, cfgCtrl *pumped.Controller[*Config]) (storage.Storage, error) {
+	// Infrastructure
+	Storage = pumped.Derive1(
+		Config,
+		func(ctx *pumped.ResolveCtx, cfgCtrl *pumped.Controller[*ConfigType]) (storage.Storage, error) {
 			cfg, err := cfgCtrl.Get()
 			if err != nil {
 				return nil, err
@@ -46,8 +41,9 @@ func Define() *Graph {
 		},
 	)
 
-	taskService := pumped.Derive1(
-		storageExec,
+	// Services
+	TaskService = pumped.Derive1(
+		Storage,
 		func(ctx *pumped.ResolveCtx, storageCtrl *pumped.Controller[storage.Storage]) (*services.TaskService, error) {
 			store, err := storageCtrl.Get()
 			if err != nil {
@@ -57,8 +53,8 @@ func Define() *Graph {
 		},
 	)
 
-	statsService := pumped.Derive1(
-		storageExec,
+	StatsService = pumped.Derive1(
+		Storage,
 		func(ctx *pumped.ResolveCtx, storageCtrl *pumped.Controller[storage.Storage]) (*services.StatsService, error) {
 			store, err := storageCtrl.Get()
 			if err != nil {
@@ -67,11 +63,4 @@ func Define() *Graph {
 			return services.NewStatsService(store), nil
 		},
 	)
-
-	return &Graph{
-		Config:       config,
-		Storage:      storageExec,
-		TaskService:  taskService,
-		StatsService: statsService,
-	}
-}
+)

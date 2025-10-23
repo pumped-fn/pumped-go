@@ -63,8 +63,6 @@ func (m *MockStorage) ListPosts() ([]*storage.Post, error) {
 }
 
 func TestUserServiceWithMockStorage(t *testing.T) {
-	g := Define()
-
 	mockStorage := &MockStorage{
 		users: map[int]*storage.User{
 			1: {ID: 1, Name: "Alice", Email: "alice@example.com"},
@@ -74,10 +72,10 @@ func TestUserServiceWithMockStorage(t *testing.T) {
 	}
 
 	testScope := pumped.NewScope(
-		pumped.WithPreset(g.Storage, mockStorage),
+		pumped.WithPreset(Storage, mockStorage),
 	)
 
-	userService, err := pumped.Resolve(testScope, g.UserService)
+	userService, err := pumped.Resolve(testScope, UserService)
 	if err != nil {
 		t.Fatalf("failed to resolve UserService: %v", err)
 	}
@@ -102,8 +100,6 @@ func TestUserServiceWithMockStorage(t *testing.T) {
 }
 
 func TestPostServiceWithMockStorage(t *testing.T) {
-	g := Define()
-
 	mockStorage := &MockStorage{
 		users: map[int]*storage.User{
 			1: {ID: 1, Name: "Alice", Email: "alice@example.com"},
@@ -115,10 +111,10 @@ func TestPostServiceWithMockStorage(t *testing.T) {
 	}
 
 	testScope := pumped.NewScope(
-		pumped.WithPreset(g.Storage, mockStorage),
+		pumped.WithPreset(Storage, mockStorage),
 	)
 
-	postService, err := pumped.Resolve(testScope, g.PostService)
+	postService, err := pumped.Resolve(testScope, PostService)
 	if err != nil {
 		t.Fatalf("failed to resolve PostService: %v", err)
 	}
@@ -143,8 +139,6 @@ func TestPostServiceWithMockStorage(t *testing.T) {
 }
 
 func TestStatsServiceWithConfigChange(t *testing.T) {
-	g := Define()
-
 	mockStorage := &MockStorage{
 		users: map[int]*storage.User{
 			1: {ID: 1, Name: "Alice", Email: "alice@example.com"},
@@ -155,10 +149,10 @@ func TestStatsServiceWithConfigChange(t *testing.T) {
 	}
 
 	testScope := pumped.NewScope(
-		pumped.WithPreset(g.Storage, mockStorage),
+		pumped.WithPreset(Storage, mockStorage),
 	)
 
-	statsService, err := pumped.Resolve(testScope, g.StatsService)
+	statsService, err := pumped.Resolve(testScope, StatsService)
 	if err != nil {
 		t.Fatalf("failed to resolve StatsService: %v", err)
 	}
@@ -172,13 +166,15 @@ func TestStatsServiceWithConfigChange(t *testing.T) {
 		t.Errorf("expected 3 total users, got %d", stats.TotalUsers)
 	}
 
-	configCtrl := pumped.Accessor(testScope, g.Config)
-	configCtrl.Update(&Config{
+	configCtrl := pumped.Accessor(testScope, Config)
+	if err := configCtrl.Update(&ConfigType{
 		MaxUsersCache:   200,
 		RateLimitPerMin: 120,
-	})
+	}); err != nil {
+		t.Fatalf("failed to update config: %v", err)
+	}
 
-	statsService2, err := pumped.Resolve(testScope, g.StatsService)
+	statsService2, err := pumped.Resolve(testScope, StatsService)
 	if err != nil {
 		t.Fatalf("failed to resolve StatsService after config update: %v", err)
 	}
@@ -198,24 +194,22 @@ func TestStatsServiceWithConfigChange(t *testing.T) {
 }
 
 func TestMultiplePresets(t *testing.T) {
-	g := Define()
-
 	mockStorage := &MockStorage{
 		users: map[int]*storage.User{},
 		posts: map[int]*storage.Post{},
 	}
 
-	testConfig := &Config{
+	testConfig := &ConfigType{
 		MaxUsersCache:   50,
 		RateLimitPerMin: 30,
 	}
 
 	testScope := pumped.NewScope(
-		pumped.WithPreset(g.Storage, mockStorage),
-		pumped.WithPreset(g.Config, testConfig),
+		pumped.WithPreset(Storage, mockStorage),
+		pumped.WithPreset(Config, testConfig),
 	)
 
-	statsService, err := pumped.Resolve(testScope, g.StatsService)
+	statsService, err := pumped.Resolve(testScope, StatsService)
 	if err != nil {
 		t.Fatalf("failed to resolve StatsService: %v", err)
 	}

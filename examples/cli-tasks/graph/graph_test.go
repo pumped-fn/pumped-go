@@ -37,8 +37,6 @@ func (m *MockStorage) Update(task *storage.Task) error {
 }
 
 func TestTaskServiceWithMockStorage(t *testing.T) {
-	g := Define()
-
 	mockStorage := &MockStorage{
 		tasks: map[int]*storage.Task{
 			1: {ID: 1, Title: "Buy groceries", Completed: false},
@@ -47,10 +45,10 @@ func TestTaskServiceWithMockStorage(t *testing.T) {
 	}
 
 	testScope := pumped.NewScope(
-		pumped.WithPreset(g.Storage, mockStorage),
+		pumped.WithPreset(Storage, mockStorage),
 	)
 
-	taskService, err := pumped.Resolve(testScope, g.TaskService)
+	taskService, err := pumped.Resolve(testScope, TaskService)
 	if err != nil {
 		t.Fatalf("failed to resolve TaskService: %v", err)
 	}
@@ -79,8 +77,6 @@ func TestTaskServiceWithMockStorage(t *testing.T) {
 }
 
 func TestStatsServiceWithMockStorage(t *testing.T) {
-	g := Define()
-
 	mockStorage := &MockStorage{
 		tasks: map[int]*storage.Task{
 			1: {ID: 1, Title: "Task 1", Completed: false},
@@ -91,10 +87,10 @@ func TestStatsServiceWithMockStorage(t *testing.T) {
 	}
 
 	testScope := pumped.NewScope(
-		pumped.WithPreset(g.Storage, mockStorage),
+		pumped.WithPreset(Storage, mockStorage),
 	)
 
-	statsService, err := pumped.Resolve(testScope, g.StatsService)
+	statsService, err := pumped.Resolve(testScope, StatsService)
 	if err != nil {
 		t.Fatalf("failed to resolve StatsService: %v", err)
 	}
@@ -118,18 +114,16 @@ func TestStatsServiceWithMockStorage(t *testing.T) {
 }
 
 func TestStorageExecutorWithConfigPreset(t *testing.T) {
-	g := Define()
-
-	testConfig := &Config{
+	testConfig := &ConfigType{
 		StorageType: "memory",
 		FilePath:    "test.json",
 	}
 
 	testScope := pumped.NewScope(
-		pumped.WithPreset(g.Config, testConfig),
+		pumped.WithPreset(Config, testConfig),
 	)
 
-	storageInstance, err := pumped.Resolve(testScope, g.Storage)
+	storageInstance, err := pumped.Resolve(testScope, Storage)
 	if err != nil {
 		t.Fatalf("failed to resolve Storage: %v", err)
 	}
@@ -159,18 +153,16 @@ func TestStorageExecutorWithConfigPreset(t *testing.T) {
 }
 
 func TestConfigDrivenStorageSelection(t *testing.T) {
-	g := Define()
-
-	memoryConfig := &Config{
+	memoryConfig := &ConfigType{
 		StorageType: "memory",
 		FilePath:    "",
 	}
 
 	memoryScope := pumped.NewScope(
-		pumped.WithPreset(g.Config, memoryConfig),
+		pumped.WithPreset(Config, memoryConfig),
 	)
 
-	memoryStorage, err := pumped.Resolve(memoryScope, g.Storage)
+	memoryStorage, err := pumped.Resolve(memoryScope, Storage)
 	if err != nil {
 		t.Fatalf("failed to resolve memory storage: %v", err)
 	}

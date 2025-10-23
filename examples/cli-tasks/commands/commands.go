@@ -10,14 +10,14 @@ import (
 	pumped "github.com/pumped-fn/pumped-go"
 )
 
-func Add(scope *pumped.Scope, g *graph.Graph, args []string) error {
+func Add(scope *pumped.Scope, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("task title required")
 	}
 
 	title := strings.Join(args, " ")
 
-	taskSvc, err := pumped.Resolve(scope, g.TaskService)
+	taskSvc, err := pumped.Resolve(scope, graph.TaskService)
 	if err != nil {
 		return err
 	}
@@ -31,13 +31,13 @@ func Add(scope *pumped.Scope, g *graph.Graph, args []string) error {
 	return nil
 }
 
-func List(scope *pumped.Scope, g *graph.Graph, args []string) error {
+func List(scope *pumped.Scope, args []string) error {
 	filter := "all"
 	if len(args) > 0 {
 		filter = args[0]
 	}
 
-	taskSvc, err := pumped.Resolve(scope, g.TaskService)
+	taskSvc, err := pumped.Resolve(scope, graph.TaskService)
 	if err != nil {
 		return err
 	}
@@ -63,7 +63,7 @@ func List(scope *pumped.Scope, g *graph.Graph, args []string) error {
 	return nil
 }
 
-func Complete(scope *pumped.Scope, g *graph.Graph, args []string) error {
+func Complete(scope *pumped.Scope, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("task ID required")
 	}
@@ -73,7 +73,7 @@ func Complete(scope *pumped.Scope, g *graph.Graph, args []string) error {
 		return fmt.Errorf("invalid task ID: %s", args[0])
 	}
 
-	taskSvc, err := pumped.Resolve(scope, g.TaskService)
+	taskSvc, err := pumped.Resolve(scope, graph.TaskService)
 	if err != nil {
 		return err
 	}
@@ -87,8 +87,8 @@ func Complete(scope *pumped.Scope, g *graph.Graph, args []string) error {
 	return nil
 }
 
-func Stats(scope *pumped.Scope, g *graph.Graph, args []string) error {
-	statsSvc, err := pumped.Resolve(scope, g.StatsService)
+func Stats(scope *pumped.Scope, args []string) error {
+	statsSvc, err := pumped.Resolve(scope, graph.StatsService)
 	if err != nil {
 		return err
 	}

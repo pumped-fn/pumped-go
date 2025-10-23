@@ -20,8 +20,7 @@ main.go                 # Single integration point (scope + graceful shutdown)
 
 1. **Setup Phase** (main.go)
    - Create scope with extensions
-   - Define executor graph (no resolution)
-   - Register handlers with scope + graph
+   - Register handlers with scope
    - Start HTTP server
 
 2. **Per-Request Phase** (handlers/*.go)
@@ -42,10 +41,10 @@ main.go                 # Single integration point (scope + graceful shutdown)
 
 ```go
 // handlers/handlers.go - Leaf node resolution
-func handleUsers(scope *pumped.Scope, g *graph.Graph) http.HandlerFunc {
+func handleUsers(scope *pumped.Scope) http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
         // Resolve ONCE at boundary
-        userSvc, err := pumped.Resolve(scope, g.UserService)
+        userSvc, err := pumped.Resolve(scope, graph.UserService)
         if err != nil {
             respondError(w, err, 500)
             return
@@ -118,12 +117,12 @@ The `StatsService` demonstrates reactive dependencies:
 
 ```go
 // graph/graph.go
-statsService := pumped.Derive2(
-    pumped.Static(storageExec),
-    pumped.Reactive(config),  // Reactive to config changes
+StatsService = pumped.Derive2(
+    Storage,
+    Config.Reactive(),  // Reactive to config changes
     func(ctx *pumped.ResolveCtx,
          storageCtrl *pumped.Controller[storage.Storage],
-         configCtrl *pumped.Controller[*Config]) (*services.StatsService, error) {
+         configCtrl *pumped.Controller[*ConfigType]) (*services.StatsService, error) {
         store, _ := storageCtrl.Get()
         cfg, _ := configCtrl.Get()
         return services.NewStatsService(store, cfg.MaxUsersCache), nil
@@ -133,7 +132,7 @@ statsService := pumped.Derive2(
 
 If you update the config:
 ```go
-pumped.Update(scope, g.Config, &graph.Config{MaxUsersCache: 200})
+pumped.Update(scope, graph.Config, &graph.ConfigType{MaxUsersCache: 200})
 ```
 
 The `StatsService` will be invalidated and re-resolved on next access.
@@ -174,8 +173,7 @@ func TestGraph_Resolves(t *testing.T) {
     scope := pumped.NewScope()
     defer scope.Dispose()
 
-    g := graph.Define()
-    userSvc, err := pumped.Resolve(scope, g.UserService)
+    userSvc, err := pumped.Resolve(scope, graph.UserService)
 
     assert.NoError(t, err)
     assert.NotNil(t, userSvc)
@@ -188,8 +186,7 @@ func TestAPI_Integration(t *testing.T) {
     scope := pumped.NewScope()
     defer scope.Dispose()
 
-    g := graph.Define()
-    userSvc, _ := pumped.Resolve(scope, g.UserService)
+    userSvc, _ := pumped.Resolve(scope, graph.UserService)
 
     user, err := userSvc.Create("Alice", "alice@example.com")
     assert.NoError(t, err)

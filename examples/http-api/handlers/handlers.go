@@ -12,28 +12,30 @@ import (
 	pumped "github.com/pumped-fn/pumped-go"
 )
 
-func Register(mux *http.ServeMux, scope *pumped.Scope, g *graph.Graph) {
+func Register(mux *http.ServeMux, scope *pumped.Scope) {
 	mux.HandleFunc("/", handleIndex())
-	mux.HandleFunc("/users", handleUsers(scope, g))
-	mux.HandleFunc("/users/", handleUserByID(scope, g))
-	mux.HandleFunc("/posts", handlePosts(scope, g))
-	mux.HandleFunc("/posts/", handlePostByID(scope, g))
-	mux.HandleFunc("/stats", handleStats(scope, g))
+	mux.HandleFunc("/users", handleUsers(scope))
+	mux.HandleFunc("/users/", handleUserByID(scope))
+	mux.HandleFunc("/posts", handlePosts(scope))
+	mux.HandleFunc("/posts/", handlePostByID(scope))
+	mux.HandleFunc("/stats", handleStats(scope))
 }
 
 func handleIndex() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{
+		if err := json.NewEncoder(w).Encode(map[string]string{
 			"message": "API Server",
 			"version": "1.0",
-		})
+		}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	}
 }
 
-func handleUsers(scope *pumped.Scope, g *graph.Graph) http.HandlerFunc {
+func handleUsers(scope *pumped.Scope) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userSvc, err := pumped.Resolve(scope, g.UserService)
+		userSvc, err := pumped.Resolve(scope, graph.UserService)
 		if err != nil {
 			respondError(w, err, 500)
 			return
@@ -70,7 +72,7 @@ func handleUsers(scope *pumped.Scope, g *graph.Graph) http.HandlerFunc {
 	}
 }
 
-func handleUserByID(scope *pumped.Scope, g *graph.Graph) http.HandlerFunc {
+func handleUserByID(scope *pumped.Scope) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := strings.TrimPrefix(r.URL.Path, "/users/")
 		id, err := strconv.Atoi(idStr)
@@ -79,7 +81,7 @@ func handleUserByID(scope *pumped.Scope, g *graph.Graph) http.HandlerFunc {
 			return
 		}
 
-		userSvc, err := pumped.Resolve(scope, g.UserService)
+		userSvc, err := pumped.Resolve(scope, graph.UserService)
 		if err != nil {
 			respondError(w, err, 500)
 			return
@@ -95,9 +97,9 @@ func handleUserByID(scope *pumped.Scope, g *graph.Graph) http.HandlerFunc {
 	}
 }
 
-func handlePosts(scope *pumped.Scope, g *graph.Graph) http.HandlerFunc {
+func handlePosts(scope *pumped.Scope) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		postSvc, err := pumped.Resolve(scope, g.PostService)
+		postSvc, err := pumped.Resolve(scope, graph.PostService)
 		if err != nil {
 			respondError(w, err, 500)
 			return
@@ -135,7 +137,7 @@ func handlePosts(scope *pumped.Scope, g *graph.Graph) http.HandlerFunc {
 	}
 }
 
-func handlePostByID(scope *pumped.Scope, g *graph.Graph) http.HandlerFunc {
+func handlePostByID(scope *pumped.Scope) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := strings.TrimPrefix(r.URL.Path, "/posts/")
 		id, err := strconv.Atoi(idStr)
@@ -144,7 +146,7 @@ func handlePostByID(scope *pumped.Scope, g *graph.Graph) http.HandlerFunc {
 			return
 		}
 
-		postSvc, err := pumped.Resolve(scope, g.PostService)
+		postSvc, err := pumped.Resolve(scope, graph.PostService)
 		if err != nil {
 			respondError(w, err, 500)
 			return
@@ -160,9 +162,9 @@ func handlePostByID(scope *pumped.Scope, g *graph.Graph) http.HandlerFunc {
 	}
 }
 
-func handleStats(scope *pumped.Scope, g *graph.Graph) http.HandlerFunc {
+func handleStats(scope *pumped.Scope) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		statsSvc, err := pumped.Resolve(scope, g.StatsService)
+		statsSvc, err := pumped.Resolve(scope, graph.StatsService)
 		if err != nil {
 			respondError(w, err, 500)
 			return
@@ -180,13 +182,17 @@ func handleStats(scope *pumped.Scope, g *graph.Graph) http.HandlerFunc {
 
 func respondJSON(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(data)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func respondError(w http.ResponseWriter, err error, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{
+	if encodeErr := json.NewEncoder(w).Encode(map[string]string{
 		"error": err.Error(),
-	})
+	}); encodeErr != nil {
+		http.Error(w, encodeErr.Error(), http.StatusInternalServerError)
+	}
 }
