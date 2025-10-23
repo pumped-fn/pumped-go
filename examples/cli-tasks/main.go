@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"github.com/pumped-fn/pumped-go/examples/cli-tasks/commands"
-	"github.com/pumped-fn/pumped-go/examples/cli-tasks/graph"
 
 	pumped "github.com/pumped-fn/pumped-go"
 	"github.com/pumped-fn/pumped-go/extensions"
@@ -22,29 +21,27 @@ func main() {
 	)
 	defer scope.Dispose()
 
-	g := graph.Define()
-
 	cmd := os.Args[1]
 	args := os.Args[2:]
 
 	switch cmd {
 	case "add":
-		if err := commands.Add(scope, g, args); err != nil {
+		if err := commands.Add(scope, args); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 	case "list":
-		if err := commands.List(scope, g, args); err != nil {
+		if err := commands.List(scope, args); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 	case "complete":
-		if err := commands.Complete(scope, g, args); err != nil {
+		if err := commands.Complete(scope, args); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 	case "stats":
-		if err := commands.Stats(scope, g, args); err != nil {
+		if err := commands.Stats(scope, args); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
