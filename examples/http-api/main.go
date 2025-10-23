@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/pumped-fn/pumped-go/examples/http-api/graph"
 	"github.com/pumped-fn/pumped-go/examples/http-api/handlers"
 
 	pumped "github.com/pumped-fn/pumped-go"
@@ -25,10 +24,8 @@ func main() {
 	)
 	defer scope.Dispose()
 
-	g := graph.Define()
-
 	mux := http.NewServeMux()
-	handlers.Register(mux, scope, g)
+	handlers.Register(mux, scope)
 
 	srv := &http.Server{
 		Addr:         ":8080",

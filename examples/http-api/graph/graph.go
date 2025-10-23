@@ -7,33 +7,28 @@ import (
 	pumped "github.com/pumped-fn/pumped-go"
 )
 
-type Graph struct {
-	Config       *pumped.Executor[*Config]
-	Storage      *pumped.Executor[storage.Storage]
-	UserService  *pumped.Executor[*services.UserService]
-	PostService  *pumped.Executor[*services.PostService]
-	StatsService *pumped.Executor[*services.StatsService]
-}
-
-type Config struct {
-	MaxUsersCache int
+type ConfigType struct {
+	MaxUsersCache   int
 	RateLimitPerMin int
 }
 
-func Define() *Graph {
-	config := pumped.Provide(func(ctx *pumped.ResolveCtx) (*Config, error) {
-		return &Config{
+var (
+	// Configuration (no dependencies)
+	Config = pumped.Provide(func(ctx *pumped.ResolveCtx) (*ConfigType, error) {
+		return &ConfigType{
 			MaxUsersCache:   100,
 			RateLimitPerMin: 60,
 		}, nil
 	})
 
-	storageExec := pumped.Provide(func(ctx *pumped.ResolveCtx) (storage.Storage, error) {
+	// Infrastructure
+	Storage = pumped.Provide(func(ctx *pumped.ResolveCtx) (storage.Storage, error) {
 		return storage.NewMemoryStorage(), nil
 	})
 
-	userService := pumped.Derive1(
-		storageExec,
+	// Services
+	UserService = pumped.Derive1(
+		Storage,
 		func(ctx *pumped.ResolveCtx, storageCtrl *pumped.Controller[storage.Storage]) (*services.UserService, error) {
 			store, err := storageCtrl.Get()
 			if err != nil {
@@ -43,9 +38,9 @@ func Define() *Graph {
 		},
 	)
 
-	postService := pumped.Derive2(
-		storageExec,
-		userService,
+	PostService = pumped.Derive2(
+		Storage,
+		UserService,
 		func(ctx *pumped.ResolveCtx,
 			storageCtrl *pumped.Controller[storage.Storage],
 			userServiceCtrl *pumped.Controller[*services.UserService]) (*services.PostService, error) {
@@ -61,12 +56,12 @@ func Define() *Graph {
 		},
 	)
 
-	statsService := pumped.Derive2(
-		storageExec,
-		config.Reactive(),
+	StatsService = pumped.Derive2(
+		Storage,
+		Config.Reactive(),
 		func(ctx *pumped.ResolveCtx,
 			storageCtrl *pumped.Controller[storage.Storage],
-			configCtrl *pumped.Controller[*Config]) (*services.StatsService, error) {
+			configCtrl *pumped.Controller[*ConfigType]) (*services.StatsService, error) {
 			store, err := storageCtrl.Get()
 			if err != nil {
 				return nil, err
@@ -78,12 +73,4 @@ func Define() *Graph {
 			return services.NewStatsService(store, cfg.MaxUsersCache), nil
 		},
 	)
-
-	return &Graph{
-		Config:       config,
-		Storage:      storageExec,
-		UserService:  userService,
-		PostService:  postService,
-		StatsService: statsService,
-	}
-}
+)
