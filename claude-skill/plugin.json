@@ -1,0 +1,21 @@
+{
+  "name": "pumped-go",
+  "version": "1.0.0",
+  "description": "Comprehensive Go guidance for pumped-go - auto-activating skill with pattern enforcement, lifecycle management, testing support, and production-ready patterns",
+  "author": "pumped-fn",
+  "repository": "https://github.com/pumped-fn/pumped-go",
+  "homepage": "https://github.com/pumped-fn/pumped-go/tree/main/claude-skill",
+  "skills": [
+    "skills/pumped-go"
+  ],
+  "tags": [
+    "go",
+    "golang",
+    "dependency-injection",
+    "graph-resolution",
+    "reactive-programming",
+    "production-ready",
+    "lifecycle-management"
+  ],
+  "minClaudeCodeVersion": "0.1.0"
+}
