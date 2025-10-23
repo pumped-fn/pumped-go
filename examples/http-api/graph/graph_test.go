@@ -167,10 +167,12 @@ func TestStatsServiceWithConfigChange(t *testing.T) {
 	}
 
 	configCtrl := pumped.Accessor(testScope, Config)
-	configCtrl.Update(&ConfigType{
+	if err := configCtrl.Update(&ConfigType{
 		MaxUsersCache:   200,
 		RateLimitPerMin: 120,
-	})
+	}); err != nil {
+		t.Fatalf("failed to update config: %v", err)
+	}
 
 	statsService2, err := pumped.Resolve(testScope, StatsService)
 	if err != nil {

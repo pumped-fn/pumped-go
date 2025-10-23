@@ -19,7 +19,11 @@ func main() {
 	scope := pumped.NewScope(
 		pumped.WithExtension(extensions.NewLoggingExtension()),
 	)
-	defer scope.Dispose()
+	defer func() {
+		if err := scope.Dispose(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to dispose scope: %v\n", err)
+		}
+	}()
 
 	cmd := os.Args[1]
 	args := os.Args[2:]

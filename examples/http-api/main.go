@@ -22,7 +22,11 @@ func main() {
 	scope := pumped.NewScope(
 		pumped.WithExtension(extensions.NewLoggingExtension()),
 	)
-	defer scope.Dispose()
+	defer func() {
+		if err := scope.Dispose(); err != nil {
+			log.Printf("Failed to dispose scope: %v", err)
+		}
+	}()
 
 	mux := http.NewServeMux()
 	handlers.Register(mux, scope)
@@ -52,10 +56,6 @@ func main() {
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Printf("Server shutdown error: %v", err)
-	}
-
-	if err := scope.Dispose(); err != nil {
-		log.Printf("Scope disposal error: %v", err)
 	}
 
 	fmt.Println("Server stopped")

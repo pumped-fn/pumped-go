@@ -20,14 +20,14 @@ type Storage interface {
 }
 
 type MemoryStorage struct {
-	mu    sync.RWMutex
-	tasks []*Task
+	mu     sync.RWMutex
+	tasks  []*Task
 	nextID int
 }
 
 func NewMemoryStorage() *MemoryStorage {
 	return &MemoryStorage{
-		tasks: []*Task{},
+		tasks:  []*Task{},
 		nextID: 1,
 	}
 }
@@ -106,7 +106,7 @@ func (s *FileStorage) save(tasks []*Task) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.filePath, data, 0644)
+	return os.WriteFile(s.filePath, data, 0600)
 }
 
 func (s *FileStorage) Add(task *Task) error {
