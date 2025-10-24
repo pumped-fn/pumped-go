@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sort"
 	"strings"
 
 	pumped "github.com/pumped-fn/pumped-go"
@@ -102,9 +103,32 @@ func (e *GraphDebugExtension) formatDependencyGraph(scope *pumped.Scope, failedE
 
 	sb.WriteString("\n")
 
-	// Format all dependencies
+	// Sort executors by name for deterministic output
+	type sortEntry struct {
+		parent   pumped.AnyExecutor
+		name     string
+		children []pumped.AnyExecutor
+	}
+
+	entries := make([]sortEntry, 0, len(graph))
 	for parent, children := range graph {
-		parentName := e.getExecutorName(parent)
+		entries = append(entries, sortEntry{
+			parent:   parent,
+			name:     e.getExecutorName(parent),
+			children: children,
+		})
+	}
+
+	// Sort by name for consistent output
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].name < entries[j].name
+	})
+
+	// Format all dependencies
+	for _, entry := range entries {
+		parent := entry.parent
+		children := entry.children
+		parentName := entry.name
 
 		// Mark parent status
 		parentStatus := ""
@@ -121,8 +145,25 @@ func (e *GraphDebugExtension) formatDependencyGraph(scope *pumped.Scope, failedE
 
 		sb.WriteString(fmt.Sprintf("  %s%s\n", parentName, parentStatus))
 
-		for i, child := range children {
-			childName := e.getExecutorName(child)
+		// Sort children by name for deterministic output
+		type childEntry struct {
+			executor pumped.AnyExecutor
+			name     string
+		}
+		childEntries := make([]childEntry, 0, len(children))
+		for _, child := range children {
+			childEntries = append(childEntries, childEntry{
+				executor: child,
+				name:     e.getExecutorName(child),
+			})
+		}
+		sort.Slice(childEntries, func(i, j int) bool {
+			return childEntries[i].name < childEntries[j].name
+		})
+
+		for i, childEntry := range childEntries {
+			child := childEntry.executor
+			childName := childEntry.name
 
 			// Mark the failed executor with error details
 			if child == failedExecutor {
