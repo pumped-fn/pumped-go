@@ -173,6 +173,10 @@ func Resolve[T any](s *Scope, exec *Executor[T]) (T, error) {
 	var result any
 	var err error
 
+	// Use context.Background() for now since Resolve doesn't take context parameter
+	// Extensions can still provide context-aware behavior if needed
+	ctx := context.Background()
+
 	// Chain extensions (middleware pattern)
 	next := func() (any, error) {
 		return exec.ResolveAny(s)
@@ -183,7 +187,7 @@ func Resolve[T any](s *Scope, exec *Executor[T]) (T, error) {
 		ext := exts[i]
 		currentNext := next
 		next = func() (any, error) {
-			return ext.Wrap(context.Background(), currentNext, op)
+			return ext.Wrap(ctx, currentNext, op)
 		}
 	}
 
@@ -210,7 +214,7 @@ func Resolve[T any](s *Scope, exec *Executor[T]) (T, error) {
 }
 
 // Update changes an executor's cached value and propagates to reactive dependents
-func Update[T any](s *Scope, exec *Executor[T], newVal T) error {
+func Update[T any](ctx context.Context, s *Scope, exec *Executor[T], newVal T) error {
 	// Wrap update with extensions
 	s.mu.RLock()
 	exts := s.extensions
@@ -223,15 +227,34 @@ func Update[T any](s *Scope, exec *Executor[T], newVal T) error {
 	}
 
 	next := func() (any, error) {
+		// Check context before starting update
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
 		s.mu.Lock()
 		toInvalidate := s.findReactiveDependents(exec)
 		s.mu.Unlock()
 
-		// Clean up the executor being updated
+		// Clean up the executor being updated (always complete this)
 		s.cleanupExecutor(exec)
 
-		for _, dependent := range toInvalidate {
+		// Gracefully cleanup dependents - check context between each
+		completedCleanups := 0
+		for i, dependent := range toInvalidate {
+			// Check for context cancellation (graceful shutdown)
+			if err := ctx.Err(); err != nil {
+				return nil, fmt.Errorf("update partially completed (%d/%d dependents cleaned): %w",
+					i, len(toInvalidate), err)
+			}
 			s.cleanupExecutor(dependent)
+			completedCleanups++
+		}
+
+		// Check context before cache operations
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("update cleaned up but cache update cancelled (%d/%d dependents): %w",
+				completedCleanups, len(toInvalidate), err)
 		}
 
 		s.cache.Store(exec, newVal)
@@ -247,7 +270,7 @@ func Update[T any](s *Scope, exec *Executor[T], newVal T) error {
 		ext := exts[i]
 		currentNext := next
 		next = func() (any, error) {
-			return ext.Wrap(context.Background(), currentNext, op)
+			return ext.Wrap(ctx, currentNext, op)
 		}
 	}
 

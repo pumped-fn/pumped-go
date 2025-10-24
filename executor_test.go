@@ -1,6 +1,7 @@
 package pumped
 
 import (
+	"context"
 	"fmt"
 	"testing"
 )
@@ -77,7 +78,7 @@ func TestReactive(t *testing.T) {
 
 	// Update counter
 	counterAcc := Accessor(scope, counter)
-	counterAcc.Update(5)
+	counterAcc.Update(context.Background(), 5)
 
 	// Doubled should be invalidated and re-resolved
 	val, _ = doubledAcc.Get()
@@ -102,7 +103,7 @@ func TestController(t *testing.T) {
 	}
 
 	// Update
-	ctrl.Update(5)
+	ctrl.Update(context.Background(), 5)
 	val, _ = ctrl.Get()
 	if val != 5 {
 		t.Errorf("expected 5, got %d", val)
@@ -629,7 +630,7 @@ func TestPresetWithReactivity(t *testing.T) {
 	}
 
 	counterCtrl := Accessor(scope, counter)
-	counterCtrl.Update(10)
+	counterCtrl.Update(context.Background(), 10)
 
 	val, _ = Resolve(scope, doubled)
 	if val != 20 {
@@ -699,7 +700,7 @@ func TestCascadingReactivityWithPreset(t *testing.T) {
 	}
 
 	gpCtrl := Accessor(scope, grandparent)
-	gpCtrl.Update(10)
+	gpCtrl.Update(context.Background(), 10)
 
 	val, _ = Resolve(scope, child)
 	if val != 40 {
