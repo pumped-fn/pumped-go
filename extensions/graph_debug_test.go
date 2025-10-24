@@ -839,3 +839,316 @@ func TestGraphDebugExtension_LargeGraphWithUpdate(t *testing.T) {
 	t.Logf("  - 1 API Gateway (top level)")
 	t.Logf("  - MessageQueue, Cache, and Config components")
 }
+
+func TestGraphDebugExtension_DeeplyNestedDependencies(t *testing.T) {
+	// Capture output in buffer AND write to stdout for visual verification
+	var buf bytes.Buffer
+	multiWriter := io.MultiWriter(&buf, os.Stdout)
+	handler := NewHumanHandler(multiWriter, slog.LevelError)
+
+	scope := pumped.NewScope(
+		pumped.WithExtension(NewGraphDebugExtension(handler)),
+	)
+	defer scope.Dispose()
+
+	nameTag := pumped.NewTag[string]("executor.name")
+
+	// Level 1: Base configuration
+	config := pumped.Provide(
+		func(ctx *pumped.ResolveCtx) (string, error) {
+			return "db-config", nil
+		},
+		pumped.WithTag(nameTag, "Config"),
+	)
+
+	// Level 2: Connection pool depends on config
+	connectionPool := pumped.Derive1(
+		config.Reactive(),
+		func(ctx *pumped.ResolveCtx, cfg *pumped.Controller[string]) (string, error) {
+			val, _ := cfg.Get()
+			return "connection-pool-" + val, nil
+		},
+		pumped.WithTag(nameTag, "ConnectionPool"),
+	)
+
+	// Level 3: Transaction manager depends on connection pool
+	transactionMgr := pumped.Derive1(
+		connectionPool.Reactive(),
+		func(ctx *pumped.ResolveCtx, pool *pumped.Controller[string]) (string, error) {
+			val, _ := pool.Get()
+			return "transaction-mgr-" + val, nil
+		},
+		pumped.WithTag(nameTag, "TransactionManager"),
+	)
+
+	// Level 4: Repository depends on transaction manager
+	repository := pumped.Derive1(
+		transactionMgr.Reactive(),
+		func(ctx *pumped.ResolveCtx, txMgr *pumped.Controller[string]) (string, error) {
+			val, _ := txMgr.Get()
+			return "repository-" + val, nil
+		},
+		pumped.WithTag(nameTag, "Repository"),
+	)
+
+	// Level 5: Domain service depends on repository
+	domainService := pumped.Derive1(
+		repository.Reactive(),
+		func(ctx *pumped.ResolveCtx, repo *pumped.Controller[string]) (string, error) {
+			val, _ := repo.Get()
+			return "domain-service-" + val, nil
+		},
+		pumped.WithTag(nameTag, "DomainService"),
+	)
+
+	// Level 6: Application service depends on domain service
+	appService := pumped.Derive1(
+		domainService.Reactive(),
+		func(ctx *pumped.ResolveCtx, svc *pumped.Controller[string]) (string, error) {
+			val, _ := svc.Get()
+			return "app-service-" + val, nil
+		},
+		pumped.WithTag(nameTag, "ApplicationService"),
+	)
+
+	// Level 7: Controller depends on application service
+	controller := pumped.Derive1(
+		appService.Reactive(),
+		func(ctx *pumped.ResolveCtx, appSvc *pumped.Controller[string]) (string, error) {
+			val, _ := appSvc.Get()
+			return "controller-" + val, nil
+		},
+		pumped.WithTag(nameTag, "Controller"),
+	)
+
+	// Level 8: Middleware depends on controller
+	middleware := pumped.Derive1(
+		controller.Reactive(),
+		func(ctx *pumped.ResolveCtx, ctrl *pumped.Controller[string]) (string, error) {
+			val, _ := ctrl.Get()
+			return "middleware-" + val, nil
+		},
+		pumped.WithTag(nameTag, "Middleware"),
+	)
+
+	// Level 9: Router depends on middleware
+	router := pumped.Derive1(
+		middleware.Reactive(),
+		func(ctx *pumped.ResolveCtx, mw *pumped.Controller[string]) (string, error) {
+			val, _ := mw.Get()
+			return "router-" + val, nil
+		},
+		pumped.WithTag(nameTag, "Router"),
+	)
+
+	// Level 10: Server depends on router - THIS WILL FAIL
+	server := pumped.Derive1(
+		router.Reactive(),
+		func(ctx *pumped.ResolveCtx, rt *pumped.Controller[string]) (string, error) {
+			return "", fmt.Errorf("server startup failed: port 8080 already in use")
+		},
+		pumped.WithTag(nameTag, "Server"),
+	)
+
+	// Try to resolve the deeply nested server
+	_, err := pumped.Resolve(scope, server)
+
+	if err == nil {
+		t.Fatal("Expected error due to server failure")
+	}
+
+	// Verify output contains nested chain
+	output := buf.String()
+
+	// Check all components are in the graph
+	expectedComponents := []string{
+		"Config", "ConnectionPool", "TransactionManager",
+		"Repository", "DomainService", "ApplicationService",
+		"Controller", "Middleware", "Router", "Server",
+	}
+
+	for _, component := range expectedComponents {
+		if !strings.Contains(output, component) {
+			t.Errorf("Expected '%s' in dependency graph output", component)
+		}
+	}
+
+	// Check for tree structure
+	if !strings.Contains(output, "└─>") {
+		t.Error("Expected tree structure in output")
+	}
+
+	// Check for failed status
+	if !strings.Contains(output, "❌ FAILED") {
+		t.Error("Expected failed status indicator")
+	}
+
+	t.Logf("\n===== Deeply Nested 10-Level Dependency Chain =====")
+	t.Logf("Config → ConnectionPool → TransactionManager → Repository →")
+	t.Logf("DomainService → ApplicationService → Controller → Middleware →")
+	t.Logf("Router → Server (FAILED)")
+}
+
+func TestGraphDebugExtension_NestedWithBranching(t *testing.T) {
+	// Capture output in buffer AND write to stdout for visual verification
+	var buf bytes.Buffer
+	multiWriter := io.MultiWriter(&buf, os.Stdout)
+	handler := NewHumanHandler(multiWriter, slog.LevelError)
+
+	scope := pumped.NewScope(
+		pumped.WithExtension(NewGraphDebugExtension(handler)),
+	)
+	defer scope.Dispose()
+
+	nameTag := pumped.NewTag[string]("executor.name")
+
+	// Root level
+	root := pumped.Provide(
+		func(ctx *pumped.ResolveCtx) (string, error) {
+			return "root", nil
+		},
+		pumped.WithTag(nameTag, "Root"),
+	)
+
+	// Level 1: Two branches from root
+	branchA := pumped.Derive1(
+		root.Reactive(),
+		func(ctx *pumped.ResolveCtx, r *pumped.Controller[string]) (string, error) {
+			val, _ := r.Get()
+			return "branch-a-" + val, nil
+		},
+		pumped.WithTag(nameTag, "BranchA"),
+	)
+
+	branchB := pumped.Derive1(
+		root.Reactive(),
+		func(ctx *pumped.ResolveCtx, r *pumped.Controller[string]) (string, error) {
+			val, _ := r.Get()
+			return "branch-b-" + val, nil
+		},
+		pumped.WithTag(nameTag, "BranchB"),
+	)
+
+	// Level 2: Branch A splits into two
+	branchA1 := pumped.Derive1(
+		branchA.Reactive(),
+		func(ctx *pumped.ResolveCtx, a *pumped.Controller[string]) (string, error) {
+			val, _ := a.Get()
+			return "branch-a1-" + val, nil
+		},
+		pumped.WithTag(nameTag, "BranchA1"),
+	)
+
+	branchA2 := pumped.Derive1(
+		branchA.Reactive(),
+		func(ctx *pumped.ResolveCtx, a *pumped.Controller[string]) (string, error) {
+			val, _ := a.Get()
+			return "branch-a2-" + val, nil
+		},
+		pumped.WithTag(nameTag, "BranchA2"),
+	)
+
+	// Level 2: Branch B splits into two
+	branchB1 := pumped.Derive1(
+		branchB.Reactive(),
+		func(ctx *pumped.ResolveCtx, b *pumped.Controller[string]) (string, error) {
+			val, _ := b.Get()
+			return "branch-b1-" + val, nil
+		},
+		pumped.WithTag(nameTag, "BranchB1"),
+	)
+
+	branchB2 := pumped.Derive1(
+		branchB.Reactive(),
+		func(ctx *pumped.ResolveCtx, b *pumped.Controller[string]) (string, error) {
+			val, _ := b.Get()
+			return "branch-b2-" + val, nil
+		},
+		pumped.WithTag(nameTag, "BranchB2"),
+	)
+
+	// Level 3: Leaf nodes that depend on the branches
+	leafA1 := pumped.Derive1(
+		branchA1.Reactive(),
+		func(ctx *pumped.ResolveCtx, a1 *pumped.Controller[string]) (string, error) {
+			val, _ := a1.Get()
+			return "leaf-a1-" + val, nil
+		},
+		pumped.WithTag(nameTag, "LeafA1"),
+	)
+
+	leafA2 := pumped.Derive1(
+		branchA2.Reactive(),
+		func(ctx *pumped.ResolveCtx, a2 *pumped.Controller[string]) (string, error) {
+			val, _ := a2.Get()
+			return "leaf-a2-" + val, nil
+		},
+		pumped.WithTag(nameTag, "LeafA2"),
+	)
+
+	leafB1 := pumped.Derive1(
+		branchB1.Reactive(),
+		func(ctx *pumped.ResolveCtx, b1 *pumped.Controller[string]) (string, error) {
+			val, _ := b1.Get()
+			return "leaf-b1-" + val, nil
+		},
+		pumped.WithTag(nameTag, "LeafB1"),
+	)
+
+	// Level 4: Final aggregator that combines everything
+	aggregator := pumped.Derive4(
+		leafA1.Reactive(),
+		leafA2.Reactive(),
+		leafB1.Reactive(),
+		branchB2.Reactive(),
+		func(ctx *pumped.ResolveCtx,
+			la1 *pumped.Controller[string],
+			la2 *pumped.Controller[string],
+			lb1 *pumped.Controller[string],
+			b2 *pumped.Controller[string]) (string, error) {
+			// Fail at aggregation level after all dependencies are resolved
+			return "", fmt.Errorf("aggregation failed: incompatible data types from branches")
+		},
+		pumped.WithTag(nameTag, "Aggregator"),
+	)
+
+	// Try to resolve the aggregator - should fail at aggregation level
+	_, err := pumped.Resolve(scope, aggregator)
+
+	if err == nil {
+		t.Fatal("Expected aggregator to fail")
+	}
+	t.Logf("Resolve result: err=%v", err)
+
+	// Verify output contains tree structure
+	output := buf.String()
+
+	// Check for branching structure
+	expectedComponents := []string{
+		"Root", "BranchA", "BranchB",
+		"BranchA1", "BranchA2", "BranchB1", "BranchB2",
+		"LeafA1", "LeafA2", "LeafB1",
+	}
+
+	for _, component := range expectedComponents {
+		if !strings.Contains(output, component) {
+			t.Errorf("Expected '%s' in dependency graph output", component)
+		}
+	}
+
+	// Check for tree connectors
+	if !strings.Contains(output, "├─>") || !strings.Contains(output, "└─>") {
+		t.Error("Expected tree structure with multiple branches")
+	}
+
+	t.Logf("\n===== Nested Tree with Branching =====")
+	t.Logf("                 Root")
+	t.Logf("                /    \\")
+	t.Logf("           BranchA  BranchB")
+	t.Logf("           /    \\    /    \\")
+	t.Logf("      BranchA1 A2  B1  B2")
+	t.Logf("         |     |   |    |")
+	t.Logf("      LeafA1 LeafA2 LeafB1")
+	t.Logf("           \\    |    /   /")
+	t.Logf("            Aggregator (FAILED)")
+}
