@@ -116,6 +116,22 @@ func (g *ReactiveGraph) GetDirectDependents(executor AnyExecutor) []AnyExecutor 
 	return nil
 }
 
+// ExportAllDependencies returns a copy of all dependency relationships
+// for debugging and visualization purposes
+func (g *ReactiveGraph) ExportAllDependencies() map[AnyExecutor][]AnyExecutor {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	// Return a deep copy to prevent external modification
+	result := make(map[AnyExecutor][]AnyExecutor, len(g.downstream))
+	for parent, children := range g.downstream {
+		childrenCopy := make([]AnyExecutor, len(children))
+		copy(childrenCopy, children)
+		result[parent] = childrenCopy
+	}
+	return result
+}
+
 // Internal helper methods
 
 func (g *ReactiveGraph) resetVisited() {

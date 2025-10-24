@@ -376,6 +376,11 @@ func (s *Scope) GetExecutionTree() *ExecutionTree {
 	return s.execTree
 }
 
+// ExportDependencyGraph returns all dependency relationships for debugging and visualization
+func (s *Scope) ExportDependencyGraph() map[AnyExecutor][]AnyExecutor {
+	return s.graph.ExportAllDependencies()
+}
+
 func (s *Scope) generateExecutionID() string {
 	return fmt.Sprintf("exec-%d", s.idCounter.Add(1))
 }
