@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	pumped "github.com/pumped-fn/pumped-go"
 	"github.com/m1gwings/treedrawer/tree"
+	pumped "github.com/pumped-fn/pumped-go"
 )
 
 // GraphDebugExtension logs dependency graph visualization when errors occur.
