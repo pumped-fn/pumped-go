@@ -125,17 +125,17 @@ func (e *GraphDebugExtension) tryFormatHorizontalTree(graph map[pumped.AnyExecut
 		return ""
 	}
 
-	// Use only the first root for tree visualization (or combine multiple roots)
+	// Build tree visualization
+	// For multiple roots, create a virtual root node
 	var rootNode *tree.Tree
 	if len(roots) == 1 {
 		rootNode = e.buildTree(roots[0], graph, failedExecutor, make(map[pumped.AnyExecutor]bool))
 	} else {
 		// Multiple roots: create a virtual root
-		rootNode = tree.NewTree(tree.NodeString("Dependencies"))
+		rootNode = tree.NewTree(tree.NodeString("Dependency Graph"))
 		for _, root := range roots {
 			childTree := e.buildTree(root, graph, failedExecutor, make(map[pumped.AnyExecutor]bool))
 			if childTree != nil {
-				// Manually add the child's structure
 				e.addTreeAsChild(rootNode, childTree)
 			}
 		}
@@ -156,12 +156,14 @@ func (e *GraphDebugExtension) buildTree(executor pumped.AnyExecutor, graph map[p
 	}
 	visited[executor] = true
 
-	// Create node label with status
+	// Create node label with status (no emoji to avoid alignment issues)
 	label := e.getExecutorName(executor)
 	if executor == failedExecutor {
-		label += " ❌"
+		label += " [FAILED]"
 	} else if e.resolvedExecutors[executor] {
-		label += " ✓"
+		label += " [OK]"
+	} else {
+		label += " [PENDING]"
 	}
 
 	// Create tree node
