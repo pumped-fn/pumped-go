@@ -18,7 +18,14 @@ func (c *Controller[T]) Peek() (T, bool) {
 		var zero T
 		return zero, false
 	}
-	return val.(T), true
+
+	typedVal, err := SafeTypeAssertion[T](val)
+	if err != nil {
+		var zero T
+		return zero, false
+	}
+
+	return typedVal, true
 }
 
 // Update sets a new value and propagates to reactive dependents
