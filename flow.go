@@ -85,17 +85,6 @@ func (e *ExecutionCtx) Context() context.Context {
 	return e.ctx
 }
 
-func (e *ExecutionCtx) Parallel(opts ...ParallelOption) *ParallelExecutor {
-	pe := &ParallelExecutor{
-		ctx:       e,
-		errorMode: ErrorModeFailFast,
-	}
-	for _, opt := range opts {
-		opt(pe)
-	}
-	return pe
-}
-
 func (e *ExecutionCtx) finalize() *ExecutionNode {
 	parentID := ""
 	if e.parent != nil {
@@ -263,38 +252,6 @@ func (t *ExecutionTree) walkUnlocked(nodeID string, visitor func(*ExecutionNode)
 	for _, childID := range t.byParent[nodeID] {
 		t.walkUnlocked(childID, visitor)
 	}
-}
-
-type ParallelExecutor struct {
-	ctx       *ExecutionCtx
-	errorMode ErrorMode
-}
-
-type ErrorMode int
-
-const (
-	ErrorModeFailFast ErrorMode = iota
-	ErrorModeCollectErrors
-)
-
-type ParallelOption func(*ParallelExecutor)
-
-func WithFailFast() ParallelOption {
-	return func(pe *ParallelExecutor) {
-		pe.errorMode = ErrorModeFailFast
-	}
-}
-
-func WithCollectErrors() ParallelOption {
-	return func(pe *ParallelExecutor) {
-		pe.errorMode = ErrorModeCollectErrors
-	}
-}
-
-type FlowError struct {
-	Index    int
-	FlowName string
-	Err      error
 }
 
 type FlowOption func(*flowConfig)

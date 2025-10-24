@@ -13,19 +13,15 @@ import (
 // Scope manages the lifecycle and resolution of executors
 type Scope struct {
 	mu              sync.RWMutex
-	cache           sync.Map
+	cache           sync.Map // Keep for compatibility, will be gradually replaced
 	tags            sync.Map
-	downstream      map[AnyExecutor][]reactiveDependent
+	graph           *ReactiveGraph
 	extensions      []Extension
 	presets         map[AnyExecutor]preset
 	cleanupRegistry map[AnyExecutor][]cleanupEntry
 	cleanupMu       sync.RWMutex
 	execTree        *ExecutionTree
 	idCounter       atomic.Uint64
-}
-
-type reactiveDependent struct {
-	executor AnyExecutor
 }
 
 type preset struct {
@@ -76,11 +72,11 @@ func WithPreset[T any](original *Executor[T], replacement any) ScopeOption {
 // NewScope creates a new scope with optional configuration
 func NewScope(opts ...ScopeOption) *Scope {
 	s := &Scope{
-		downstream:      make(map[AnyExecutor][]reactiveDependent),
 		extensions:      []Extension{},
 		presets:         make(map[AnyExecutor]preset),
 		cleanupRegistry: make(map[AnyExecutor][]cleanupEntry),
 		execTree:        newExecutionTree(1000),
+		graph:           NewReactiveGraph(), // Initialize new reactive graph
 	}
 
 	for _, opt := range opts {
@@ -100,18 +96,22 @@ func Accessor[T any](s *Scope, exec *Executor[T]) *Controller[T] {
 
 // Resolve resolves an executor's value (lazily, with caching)
 func Resolve[T any](s *Scope, exec *Executor[T]) (T, error) {
+	var zero T
+
 	if val, ok := s.cache.Load(exec); ok {
-		return val.(T), nil
+		typedVal, err := SafeTypeAssertion[T](val)
+		if err != nil {
+			return zero, CreateResolveError(exec, err, "cache_retrieval")
+		}
+		return typedVal, nil
 	}
 
-	// Build reactive graph
+	// Build reactive graph using the new graph structure only
 	s.mu.Lock()
 	for _, dep := range exec.deps {
 		if dep.GetMode() == ModeReactive {
-			s.downstream[dep.GetExecutor()] = append(
-				s.downstream[dep.GetExecutor()],
-				reactiveDependent{executor: exec},
-			)
+			// Update reactive graph for dependency tracking
+			s.graph.AddDependency(exec, dep.GetExecutor())
 		}
 	}
 	s.mu.Unlock()
@@ -125,8 +125,13 @@ func Resolve[T any](s *Scope, exec *Executor[T]) (T, error) {
 	if hasPreset {
 		if preset.isValue {
 			// Value preset - cache and return
+			typedVal, err := SafeTypeAssertion[T](preset.value)
+			if err != nil {
+				var zero T
+				return zero, CreateResolveError(exec, err, "preset_value_type_assertion")
+			}
 			s.cache.Store(exec, preset.value)
-			return preset.value.(T), nil
+			return typedVal, nil
 		}
 
 		// Executor preset - resolve replacement
@@ -136,8 +141,14 @@ func Resolve[T any](s *Scope, exec *Executor[T]) (T, error) {
 			return zero, err
 		}
 
+		typedVal, typeErr := SafeTypeAssertion[T](val)
+		if typeErr != nil {
+			var zero T
+			return zero, CreateResolveError(exec, typeErr, "preset_executor_type_assertion")
+		}
+
 		s.cache.Store(exec, val)
-		return val.(T), nil
+		return typedVal, nil
 	}
 
 	// Resolve dependencies first (skip lazy dependencies)
@@ -189,7 +200,13 @@ func Resolve[T any](s *Scope, exec *Executor[T]) (T, error) {
 
 	s.cache.Store(exec, result)
 
-	return result.(T), nil
+	typedResult, err := SafeTypeAssertion[T](result)
+	if err != nil {
+		var zero T
+		return zero, CreateResolveError(exec, err, "resolution_type_assertion")
+	}
+
+	return typedResult, nil
 }
 
 // Update changes an executor's cached value and propagates to reactive dependents
@@ -209,6 +226,9 @@ func Update[T any](s *Scope, exec *Executor[T], newVal T) error {
 		s.mu.Lock()
 		toInvalidate := s.findReactiveDependents(exec)
 		s.mu.Unlock()
+
+		// Clean up the executor being updated
+		s.cleanupExecutor(exec)
 
 		for _, dependent := range toInvalidate {
 			s.cleanupExecutor(dependent)
@@ -237,24 +257,8 @@ func Update[T any](s *Scope, exec *Executor[T], newVal T) error {
 
 // findReactiveDependents walks the dependency graph to find all reactive dependents
 func (s *Scope) findReactiveDependents(exec AnyExecutor) []AnyExecutor {
-	var result []AnyExecutor
-	visited := make(map[AnyExecutor]bool)
-
-	var walk func(AnyExecutor)
-	walk = func(current AnyExecutor) {
-		if visited[current] {
-			return
-		}
-		visited[current] = true
-
-		for _, dep := range s.downstream[current] {
-			result = append(result, dep.executor)
-			walk(dep.executor)
-		}
-	}
-
-	walk(exec)
-	return result
+	// Use new reactive graph for safe, iterative traversal
+	return s.graph.FindDependents(exec)
 }
 
 // UseExtension registers an extension to the scope
