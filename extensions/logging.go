@@ -23,7 +23,6 @@ func NewLoggingExtension() *LoggingExtension {
 func (e *LoggingExtension) Wrap(ctx context.Context, next func() (any, error), op *pumped.Operation) (any, error) {
 	start := time.Now()
 	fmt.Printf("[%s] %s starting\n", e.Name(), op.Kind)
-
 	result, err := next()
 
 	duration := time.Since(start)
