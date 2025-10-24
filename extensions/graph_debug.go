@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	pumped "github.com/pumped-fn/pumped-go"
+	"github.com/m1gwings/treedrawer/tree"
 )
 
 // GraphDebugExtension logs dependency graph visualization when errors occur.
@@ -92,6 +93,112 @@ func (e *GraphDebugExtension) OnFlowPanic(execCtx *pumped.ExecutionCtx, recovere
 	return nil // Don't suppress the error
 }
 
+// tryFormatHorizontalTree attempts to render the dependency graph as a horizontal tree using treedrawer
+func (e *GraphDebugExtension) tryFormatHorizontalTree(graph map[pumped.AnyExecutor][]pumped.AnyExecutor, failedExecutor pumped.AnyExecutor) string {
+	// Build reverse map (child -> parents) to find roots
+	parents := make(map[pumped.AnyExecutor][]pumped.AnyExecutor)
+	allNodes := make(map[pumped.AnyExecutor]bool)
+
+	for parent, children := range graph {
+		allNodes[parent] = true
+		for _, child := range children {
+			allNodes[child] = true
+			parents[child] = append(parents[child], parent)
+		}
+	}
+
+	// Find root nodes (no parents)
+	var roots []pumped.AnyExecutor
+	for node := range allNodes {
+		if len(parents[node]) == 0 {
+			roots = append(roots, node)
+		}
+	}
+
+	// Sort roots by name for deterministic output
+	sort.Slice(roots, func(i, j int) bool {
+		return e.getExecutorName(roots[i]) < e.getExecutorName(roots[j])
+	})
+
+	// If no clear root, return empty (fallback to vertical)
+	if len(roots) == 0 {
+		return ""
+	}
+
+	// Use only the first root for tree visualization (or combine multiple roots)
+	var rootNode *tree.Tree
+	if len(roots) == 1 {
+		rootNode = e.buildTree(roots[0], graph, failedExecutor, make(map[pumped.AnyExecutor]bool))
+	} else {
+		// Multiple roots: create a virtual root
+		rootNode = tree.NewTree(tree.NodeString("Dependencies"))
+		for _, root := range roots {
+			childTree := e.buildTree(root, graph, failedExecutor, make(map[pumped.AnyExecutor]bool))
+			if childTree != nil {
+				// Manually add the child's structure
+				e.addTreeAsChild(rootNode, childTree)
+			}
+		}
+	}
+
+	if rootNode == nil {
+		return ""
+	}
+
+	return rootNode.String()
+}
+
+// buildTree recursively builds a tree structure from the dependency graph
+func (e *GraphDebugExtension) buildTree(executor pumped.AnyExecutor, graph map[pumped.AnyExecutor][]pumped.AnyExecutor, failedExecutor pumped.AnyExecutor, visited map[pumped.AnyExecutor]bool) *tree.Tree {
+	// Prevent cycles
+	if visited[executor] {
+		return nil
+	}
+	visited[executor] = true
+
+	// Create node label with status
+	label := e.getExecutorName(executor)
+	if executor == failedExecutor {
+		label += " ❌"
+	} else if e.resolvedExecutors[executor] {
+		label += " ✓"
+	}
+
+	// Create tree node
+	node := tree.NewTree(tree.NodeString(label))
+
+	// Add children (dependents)
+	if children, ok := graph[executor]; ok {
+		// Sort children for deterministic order
+		sortedChildren := make([]pumped.AnyExecutor, len(children))
+		copy(sortedChildren, children)
+		sort.Slice(sortedChildren, func(i, j int) bool {
+			return e.getExecutorName(sortedChildren[i]) < e.getExecutorName(sortedChildren[j])
+		})
+
+		for _, child := range sortedChildren {
+			childTree := e.buildTree(child, graph, failedExecutor, visited)
+			if childTree != nil {
+				e.addTreeAsChild(node, childTree)
+			}
+		}
+	}
+
+	return node
+}
+
+// addTreeAsChild adds a tree as a child to another tree node
+func (e *GraphDebugExtension) addTreeAsChild(parent *tree.Tree, child *tree.Tree) {
+	// Get the child's value and create a new child node
+	childVal := child.Val()
+	newChild := parent.AddChild(childVal)
+
+	// Recursively add all of child's children to newChild
+	for _, grandchild := range child.Children() {
+		e.addTreeAsChild(newChild, grandchild)
+	}
+}
+
 func (e *GraphDebugExtension) formatDependencyGraph(scope *pumped.Scope, failedExecutor pumped.AnyExecutor, failedErr error) string {
 	var sb strings.Builder
 	graph := scope.ExportDependencyGraph()
@@ -101,7 +208,15 @@ func (e *GraphDebugExtension) formatDependencyGraph(scope *pumped.Scope, failedE
 		return sb.String()
 	}
 
-	sb.WriteString("\n")
+	// Try horizontal tree format first
+	horizontalTree := e.tryFormatHorizontalTree(graph, failedExecutor)
+	if horizontalTree != "" {
+		sb.WriteString("\n")
+		sb.WriteString(horizontalTree)
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString("\nDetailed View:\n")
 
 	// Sort executors by name for deterministic output
 	type sortEntry struct {
