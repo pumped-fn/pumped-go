@@ -1,5 +1,7 @@
 package pumped
 
+import "context"
+
 // Controller provides lifecycle control for an executor's value
 type Controller[T any] struct {
 	executor *Executor[T]
@@ -29,13 +31,13 @@ func (c *Controller[T]) Peek() (T, bool) {
 }
 
 // Update sets a new value and propagates to reactive dependents
-func (c *Controller[T]) Update(newVal T) error {
-	return Update(c.scope, c.executor, newVal)
+func (c *Controller[T]) Update(ctx context.Context, newVal T) error {
+	return Update(ctx, c.scope, c.executor, newVal)
 }
 
 // Set is an alias for Update
-func (c *Controller[T]) Set(newVal T) error {
-	return c.Update(newVal)
+func (c *Controller[T]) Set(ctx context.Context, newVal T) error {
+	return c.Update(ctx, newVal)
 }
 
 // Release invalidates the cached value

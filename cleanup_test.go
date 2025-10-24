@@ -1,6 +1,7 @@
 package pumped
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"testing"
@@ -103,7 +104,7 @@ func TestCleanup_ReactiveReplacement(t *testing.T) {
 	}
 
 	counterCtrl := Accessor(scope, counter)
-	counterCtrl.Update(1)
+	counterCtrl.Update(context.Background(), 1)
 
 	if len(cleaned) != 1 {
 		t.Fatalf("expected 1 cleanup after update, got %d", len(cleaned))
@@ -204,7 +205,7 @@ func TestCleanup_ErrorContext(t *testing.T) {
 	Resolve(scope, derived)
 
 	counterCtrl := Accessor(scope, counter)
-	counterCtrl.Update(1)
+	counterCtrl.Update(context.Background(), 1)
 
 	if len(contexts) != 1 {
 		t.Fatalf("expected 1 context after reactive update, got %d", len(contexts))

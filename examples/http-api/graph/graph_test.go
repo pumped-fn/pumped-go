@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"context"
 	"testing"
 
 	pumped "github.com/pumped-fn/pumped-go"
@@ -167,7 +168,7 @@ func TestStatsServiceWithConfigChange(t *testing.T) {
 	}
 
 	configCtrl := pumped.Accessor(testScope, Config)
-	if err := configCtrl.Update(&ConfigType{
+	if err := configCtrl.Update(context.Background(), &ConfigType{
 		MaxUsersCache:   200,
 		RateLimitPerMin: 120,
 	}); err != nil {

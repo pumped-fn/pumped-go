@@ -328,7 +328,7 @@ func TestBehavioral_CleanupOnReactiveUpdate(t *testing.T) {
 	}
 
 	// Update base executor - should trigger cleanup
-	err = Update(scope, baseExec, 5)
+	err = Update(context.Background(), scope, baseExec, 5)
 	if err != nil {
 		t.Fatalf("Update failed: %v", err)
 	}

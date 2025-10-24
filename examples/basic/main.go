@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	pumped "github.com/pumped-fn/pumped-go"
@@ -52,13 +53,13 @@ func main() {
 		func(ctx *pumped.ResolveCtx, counterCtrl *pumped.Controller[int]) (*Button, error) {
 			fmt.Println("  -> Factory: Creating button")
 			return &Button{
-				onClick: func() error {
+				onClick: func(ctx context.Context) error {
 					current, err := counterCtrl.Get()
 					if err != nil {
 						return err
 					}
 					fmt.Printf("  -> Button clicked! Updating %d -> %d\n", current, current+1)
-					return counterCtrl.Update(current + 1)
+					return counterCtrl.Update(ctx, current+1)
 				},
 			}, nil
 		},
@@ -79,7 +80,7 @@ func main() {
 
 	// Click button to update counter
 	fmt.Println("=== Click Button (triggers reactivity) ===")
-	btn.onClick()
+	btn.onClick(context.Background())
 
 	// Reactive executors are invalidated
 	val1, _ = doubledAcc.Get()
@@ -89,7 +90,7 @@ func main() {
 
 	// Click again
 	fmt.Println("=== Click Again ===")
-	btn.onClick()
+	btn.onClick(context.Background())
 
 	val1, _ = doubledAcc.Get()
 	val2, _ = tripledAcc.Get()
@@ -107,5 +108,5 @@ func main() {
 }
 
 type Button struct {
-	onClick func() error
+	onClick func(context.Context) error
 }
