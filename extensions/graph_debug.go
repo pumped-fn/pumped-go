@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"regexp"
 	"sort"
 	"strings"
 
-	"github.com/m1gwings/treedrawer/tree"
 	pumped "github.com/pumped-fn/pumped-go"
 )
 
@@ -93,214 +93,134 @@ func (e *GraphDebugExtension) OnFlowPanic(execCtx *pumped.ExecutionCtx, recovere
 	return nil // Don't suppress the error
 }
 
-// tryFormatHorizontalTree attempts to render the dependency graph as a horizontal tree using treedrawer
-func (e *GraphDebugExtension) tryFormatHorizontalTree(graph map[pumped.AnyExecutor][]pumped.AnyExecutor, failedExecutor pumped.AnyExecutor) string {
-	// Build reverse map (child -> parents) to find roots
-	parents := make(map[pumped.AnyExecutor][]pumped.AnyExecutor)
-	allNodes := make(map[pumped.AnyExecutor]bool)
+// D2 status colors
+const (
+	d2ColorOK      = "#90EE90" // Light green
+	d2ColorFailed  = "#FFB6C1" // Light red
+	d2ColorPending = "#D3D3D3" // Light gray
+	d2ColorEmpty   = "#F5F5F5" // Very light gray
+	d2StrokeFailed = "#FF0000" // Red
+)
 
+// sanitizeD2NodeID converts an executor name to a valid D2 node ID
+func sanitizeD2NodeID(name string) string {
+	// Replace spaces with underscores, keep only alphanumeric and underscores
+	re := regexp.MustCompile(`[^a-zA-Z0-9_]`)
+	sanitized := strings.ReplaceAll(name, " ", "_")
+	sanitized = re.ReplaceAllString(sanitized, "_")
+	// Ensure it doesn't start with a number
+	if len(sanitized) > 0 && sanitized[0] >= '0' && sanitized[0] <= '9' {
+		sanitized = "_" + sanitized
+	}
+	if sanitized == "" {
+		sanitized = "_node"
+	}
+	return sanitized
+}
+
+// formatD2Diagram generates a D2 diagram representation of the dependency graph
+func (e *GraphDebugExtension) formatD2Diagram(graph map[pumped.AnyExecutor][]pumped.AnyExecutor, failedExecutor pumped.AnyExecutor) string {
+	var sb strings.Builder
+
+	sb.WriteString("direction: down\n\n")
+
+	// Handle empty graph
+	if len(graph) == 0 {
+		sb.WriteString(fmt.Sprintf("empty: \"No reactive dependencies tracked\" {\n  style.fill: \"%s\"\n}\n", d2ColorEmpty))
+		return sb.String()
+	}
+
+	// Collect all unique nodes
+	allNodes := make(map[pumped.AnyExecutor]bool)
 	for parent, children := range graph {
 		allNodes[parent] = true
 		for _, child := range children {
 			allNodes[child] = true
-			parents[child] = append(parents[child], parent)
 		}
 	}
 
-	// Find root nodes (no parents)
-	var roots []pumped.AnyExecutor
-	for node := range allNodes {
-		if len(parents[node]) == 0 {
-			roots = append(roots, node)
-		}
+	// Sort nodes by name for deterministic output
+	type nodeEntry struct {
+		executor pumped.AnyExecutor
+		name     string
 	}
-
-	// Sort roots by name for deterministic output
-	sort.Slice(roots, func(i, j int) bool {
-		return e.getExecutorName(roots[i]) < e.getExecutorName(roots[j])
+	nodes := make([]nodeEntry, 0, len(allNodes))
+	for exec := range allNodes {
+		nodes = append(nodes, nodeEntry{
+			executor: exec,
+			name:     e.getExecutorName(exec),
+		})
+	}
+	sort.Slice(nodes, func(i, j int) bool {
+		return nodes[i].name < nodes[j].name
 	})
 
-	// If no clear root, return empty (fallback to vertical)
-	if len(roots) == 0 {
-		return ""
+	// Emit node declarations with styling
+	for _, node := range nodes {
+		nodeID := sanitizeD2NodeID(node.name)
+		label := node.name
+
+		// Determine status and styling
+		var fill, stroke string
+		var strokeWidth int
+
+		if node.executor == failedExecutor {
+			fill = d2ColorFailed
+			stroke = d2StrokeFailed
+			strokeWidth = 3
+		} else if e.resolvedExecutors[node.executor] {
+			fill = d2ColorOK
+		} else {
+			fill = d2ColorPending
+		}
+
+		sb.WriteString(fmt.Sprintf("%s: \"%s\" {\n", nodeID, label))
+		sb.WriteString(fmt.Sprintf("  style.fill: \"%s\"\n", fill))
+		if stroke != "" {
+			sb.WriteString(fmt.Sprintf("  style.stroke: \"%s\"\n", stroke))
+			sb.WriteString(fmt.Sprintf("  style.stroke-width: %d\n", strokeWidth))
+		}
+		sb.WriteString("}\n")
 	}
 
-	// Build tree visualization
-	// For multiple roots, create a virtual root node
-	var rootNode *tree.Tree
-	if len(roots) == 1 {
-		rootNode = e.buildTree(roots[0], graph, failedExecutor, make(map[pumped.AnyExecutor]bool))
-	} else {
-		// Multiple roots: create a virtual root
-		rootNode = tree.NewTree(tree.NodeString("Dependency Graph"))
-		for _, root := range roots {
-			childTree := e.buildTree(root, graph, failedExecutor, make(map[pumped.AnyExecutor]bool))
-			if childTree != nil {
-				e.addTreeAsChild(rootNode, childTree)
-			}
+	sb.WriteString("\n")
+
+	// Collect and sort connections for deterministic output
+	type connection struct {
+		from string
+		to   string
+	}
+	var connections []connection
+
+	for parent, children := range graph {
+		parentID := sanitizeD2NodeID(e.getExecutorName(parent))
+		for _, child := range children {
+			childID := sanitizeD2NodeID(e.getExecutorName(child))
+			connections = append(connections, connection{from: parentID, to: childID})
 		}
 	}
 
-	if rootNode == nil {
-		return ""
-	}
-
-	return rootNode.String()
-}
-
-// buildTree recursively builds a tree structure from the dependency graph
-func (e *GraphDebugExtension) buildTree(executor pumped.AnyExecutor, graph map[pumped.AnyExecutor][]pumped.AnyExecutor, failedExecutor pumped.AnyExecutor, visited map[pumped.AnyExecutor]bool) *tree.Tree {
-	// Prevent cycles
-	if visited[executor] {
-		return nil
-	}
-	visited[executor] = true
-
-	// Create node label with status (no emoji to avoid alignment issues)
-	label := e.getExecutorName(executor)
-	if executor == failedExecutor {
-		label += " [FAILED]"
-	} else if e.resolvedExecutors[executor] {
-		label += " [OK]"
-	} else {
-		label += " [PENDING]"
-	}
-
-	// Create tree node
-	node := tree.NewTree(tree.NodeString(label))
-
-	// Add children (dependents)
-	if children, ok := graph[executor]; ok {
-		// Sort children for deterministic order
-		sortedChildren := make([]pumped.AnyExecutor, len(children))
-		copy(sortedChildren, children)
-		sort.Slice(sortedChildren, func(i, j int) bool {
-			return e.getExecutorName(sortedChildren[i]) < e.getExecutorName(sortedChildren[j])
-		})
-
-		for _, child := range sortedChildren {
-			childTree := e.buildTree(child, graph, failedExecutor, visited)
-			if childTree != nil {
-				e.addTreeAsChild(node, childTree)
-			}
+	sort.Slice(connections, func(i, j int) bool {
+		if connections[i].from != connections[j].from {
+			return connections[i].from < connections[j].from
 		}
+		return connections[i].to < connections[j].to
+	})
+
+	// Emit connections
+	for _, conn := range connections {
+		sb.WriteString(fmt.Sprintf("%s -> %s\n", conn.from, conn.to))
 	}
 
-	return node
-}
-
-// addTreeAsChild adds a tree as a child to another tree node
-func (e *GraphDebugExtension) addTreeAsChild(parent *tree.Tree, child *tree.Tree) {
-	// Get the child's value and create a new child node
-	childVal := child.Val()
-	newChild := parent.AddChild(childVal)
-
-	// Recursively add all of child's children to newChild
-	for _, grandchild := range child.Children() {
-		e.addTreeAsChild(newChild, grandchild)
-	}
+	return sb.String()
 }
 
 func (e *GraphDebugExtension) formatDependencyGraph(scope *pumped.Scope, failedExecutor pumped.AnyExecutor, failedErr error) string {
 	var sb strings.Builder
 	graph := scope.ExportDependencyGraph()
 
-	if len(graph) == 0 {
-		sb.WriteString("\n(empty - no reactive dependencies tracked)")
-		return sb.String()
-	}
-
-	// Try horizontal tree format first
-	horizontalTree := e.tryFormatHorizontalTree(graph, failedExecutor)
-	if horizontalTree != "" {
-		sb.WriteString("\n")
-		sb.WriteString(horizontalTree)
-		sb.WriteString("\n")
-	}
-
-	sb.WriteString("\nDetailed View:\n")
-
-	// Sort executors by name for deterministic output
-	type sortEntry struct {
-		parent   pumped.AnyExecutor
-		name     string
-		children []pumped.AnyExecutor
-	}
-
-	entries := make([]sortEntry, 0, len(graph))
-	for parent, children := range graph {
-		entries = append(entries, sortEntry{
-			parent:   parent,
-			name:     e.getExecutorName(parent),
-			children: children,
-		})
-	}
-
-	// Sort by name for consistent output
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].name < entries[j].name
-	})
-
-	// Format all dependencies
-	for _, entry := range entries {
-		parent := entry.parent
-		children := entry.children
-		parentName := entry.name
-
-		// Mark parent status
-		parentStatus := ""
-		if e.resolvedExecutors[parent] {
-			parentStatus = " ✓"
-		} else if _, failed := e.failedExecutors[parent]; failed {
-			parentStatus = " ❌"
-		}
-
-		if len(children) == 0 {
-			sb.WriteString(fmt.Sprintf("  %s%s (no dependents)\n", parentName, parentStatus))
-			continue
-		}
-
-		sb.WriteString(fmt.Sprintf("  %s%s\n", parentName, parentStatus))
-
-		// Sort children by name for deterministic output
-		type childEntry struct {
-			executor pumped.AnyExecutor
-			name     string
-		}
-		childEntries := make([]childEntry, 0, len(children))
-		for _, child := range children {
-			childEntries = append(childEntries, childEntry{
-				executor: child,
-				name:     e.getExecutorName(child),
-			})
-		}
-		sort.Slice(childEntries, func(i, j int) bool {
-			return childEntries[i].name < childEntries[j].name
-		})
-
-		for i, childEntry := range childEntries {
-			child := childEntry.executor
-			childName := childEntry.name
-
-			// Mark the failed executor with error details
-			if child == failedExecutor {
-				childName = childName + " ❌ FAILED"
-			} else if e.resolvedExecutors[child] {
-				childName = childName + " ✓"
-			} else if childErr, failed := e.failedExecutors[child]; failed {
-				childName = fmt.Sprintf("%s ❌ (error: %v)", childName, childErr)
-			} else {
-				childName = childName + " (pending)"
-			}
-
-			// Use tree characters
-			if i == len(children)-1 {
-				sb.WriteString(fmt.Sprintf("    └─> %s\n", childName))
-			} else {
-				sb.WriteString(fmt.Sprintf("    ├─> %s\n", childName))
-			}
-		}
-	}
+	sb.WriteString("\n")
+	sb.WriteString(e.formatD2Diagram(graph, failedExecutor))
 
 	// Show error details for the failed executor
 	if failedErr != nil {

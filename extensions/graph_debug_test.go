@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"oss.terrastruct.com/d2/d2parser"
 	pumped "github.com/pumped-fn/pumped-go"
 )
 
@@ -82,18 +83,27 @@ func TestGraphDebugExtension_OnError(t *testing.T) {
 		t.Error("Expected 'Dependency Graph:' section")
 	}
 
-	// Check for tree structure with proper formatting
+	// Check for D2 diagram format
+	if !strings.Contains(output, "direction: down") {
+		t.Error("Expected 'direction: down' in D2 output")
+	}
+
 	if !strings.Contains(output, "Storage") {
 		t.Error("Expected 'Storage' in dependency graph")
 	}
 
-	if !strings.Contains(output, "└─>") || !strings.Contains(output, "UserService") {
-		t.Error("Expected tree structure with '└─>' and 'UserService'")
+	if !strings.Contains(output, "UserService") {
+		t.Error("Expected 'UserService' in dependency graph")
 	}
 
-	// Check for status indicator
-	if !strings.Contains(output, "❌ FAILED") {
-		t.Error("Expected '❌ FAILED' status indicator")
+	// Check for D2 connection syntax
+	if !strings.Contains(output, "->") {
+		t.Error("Expected D2 arrow syntax '->' in output")
+	}
+
+	// Check for failed node styling (red fill)
+	if !strings.Contains(output, d2ColorFailed) {
+		t.Errorf("Expected failed node color '%s' in D2 output", d2ColorFailed)
 	}
 
 	// Check for Error Details section
@@ -973,14 +983,19 @@ func TestGraphDebugExtension_DeeplyNestedDependencies(t *testing.T) {
 		}
 	}
 
-	// Check for tree structure
-	if !strings.Contains(output, "└─>") {
-		t.Error("Expected tree structure in output")
+	// Check for D2 format
+	if !strings.Contains(output, "direction: down") {
+		t.Error("Expected D2 direction directive in output")
 	}
 
-	// Check for failed status
-	if !strings.Contains(output, "❌ FAILED") {
-		t.Error("Expected failed status indicator")
+	// Check for D2 connection syntax
+	if !strings.Contains(output, "->") {
+		t.Error("Expected D2 arrow syntax in output")
+	}
+
+	// Check for failed node styling
+	if !strings.Contains(output, d2ColorFailed) {
+		t.Error("Expected failed node color in D2 output")
 	}
 
 	t.Logf("\n===== Deeply Nested 10-Level Dependency Chain =====")
@@ -1120,7 +1135,7 @@ func TestGraphDebugExtension_NestedWithBranching(t *testing.T) {
 	}
 	t.Logf("Resolve result: err=%v", err)
 
-	// Verify output contains tree structure
+	// Verify output contains D2 format
 	output := buf.String()
 
 	// Check for branching structure
@@ -1136,9 +1151,14 @@ func TestGraphDebugExtension_NestedWithBranching(t *testing.T) {
 		}
 	}
 
-	// Check for tree connectors
-	if !strings.Contains(output, "├─>") || !strings.Contains(output, "└─>") {
-		t.Error("Expected tree structure with multiple branches")
+	// Check for D2 format
+	if !strings.Contains(output, "direction: down") {
+		t.Error("Expected D2 direction directive in output")
+	}
+
+	// Check for D2 connection syntax showing branches
+	if !strings.Contains(output, "->") {
+		t.Error("Expected D2 arrow syntax for connections")
 	}
 
 	t.Logf("\n===== Nested Tree with Branching =====")
@@ -1151,4 +1171,181 @@ func TestGraphDebugExtension_NestedWithBranching(t *testing.T) {
 	t.Logf("      LeafA1 LeafA2 LeafB1")
 	t.Logf("           \\    |    /   /")
 	t.Logf("            Aggregator (FAILED)")
+}
+
+func TestFormatD2Diagram_ValidD2Syntax(t *testing.T) {
+	ext := NewGraphDebugExtension(NewSilentHandler())
+	scope := pumped.NewScope(
+		pumped.WithExtension(ext),
+	)
+	defer scope.Dispose()
+
+	nameTag := pumped.NewTag[string]("executor.name")
+
+	// Create a dependency graph
+	config := pumped.Provide(
+		func(ctx *pumped.ResolveCtx) (string, error) {
+			return "config", nil
+		},
+		pumped.WithTag(nameTag, "Config"),
+	)
+
+	database := pumped.Derive1(
+		config.Reactive(),
+		func(ctx *pumped.ResolveCtx, cfg *pumped.Controller[string]) (string, error) {
+			val, _ := cfg.Get()
+			return "database-" + val, nil
+		},
+		pumped.WithTag(nameTag, "Database"),
+	)
+
+	service := pumped.Derive1(
+		database.Reactive(),
+		func(ctx *pumped.ResolveCtx, db *pumped.Controller[string]) (string, error) {
+			val, _ := db.Get()
+			return "service-" + val, nil
+		},
+		pumped.WithTag(nameTag, "Service"),
+	)
+
+	// Resolve to build the graph
+	_, err := pumped.Resolve(scope, service)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Export the graph and generate D2 output
+	graph := scope.ExportDependencyGraph()
+	d2Output := ext.formatD2Diagram(graph, nil)
+
+	// Validate D2 syntax by parsing with d2parser
+	_, parseErr := d2parser.Parse("test.d2", strings.NewReader(d2Output), nil)
+	if parseErr != nil {
+		t.Errorf("D2 output is not valid syntax: %v\nD2 Output:\n%s", parseErr, d2Output)
+	}
+
+	// Verify expected content
+	if !strings.Contains(d2Output, "direction: down") {
+		t.Error("Expected 'direction: down' in D2 output")
+	}
+
+	if !strings.Contains(d2Output, "Config") {
+		t.Error("Expected 'Config' node in D2 output")
+	}
+
+	if !strings.Contains(d2Output, "Database") {
+		t.Error("Expected 'Database' node in D2 output")
+	}
+
+	if !strings.Contains(d2Output, "Service") {
+		t.Error("Expected 'Service' node in D2 output")
+	}
+
+	// Check for connections
+	if !strings.Contains(d2Output, "->") {
+		t.Error("Expected D2 connection arrows in output")
+	}
+
+	// Check for styling
+	if !strings.Contains(d2Output, "style.fill") {
+		t.Error("Expected style.fill in D2 output")
+	}
+
+	t.Logf("Valid D2 output:\n%s", d2Output)
+}
+
+func TestFormatD2Diagram_EmptyGraph(t *testing.T) {
+	ext := NewGraphDebugExtension(NewSilentHandler())
+
+	// Create empty graph
+	graph := make(map[pumped.AnyExecutor][]pumped.AnyExecutor)
+	d2Output := ext.formatD2Diagram(graph, nil)
+
+	// Validate D2 syntax
+	_, parseErr := d2parser.Parse("test.d2", strings.NewReader(d2Output), nil)
+	if parseErr != nil {
+		t.Errorf("Empty graph D2 output is not valid syntax: %v\nD2 Output:\n%s", parseErr, d2Output)
+	}
+
+	// Check for empty graph message
+	if !strings.Contains(d2Output, "No reactive dependencies tracked") {
+		t.Error("Expected empty graph message in D2 output")
+	}
+
+	t.Logf("Empty graph D2 output:\n%s", d2Output)
+}
+
+func TestFormatD2Diagram_WithFailedExecutor(t *testing.T) {
+	ext := NewGraphDebugExtension(NewSilentHandler())
+	scope := pumped.NewScope(
+		pumped.WithExtension(ext),
+	)
+	defer scope.Dispose()
+
+	nameTag := pumped.NewTag[string]("executor.name")
+
+	// Create a dependency graph with a failing executor
+	config := pumped.Provide(
+		func(ctx *pumped.ResolveCtx) (string, error) {
+			return "config", nil
+		},
+		pumped.WithTag(nameTag, "Config"),
+	)
+
+	failingService := pumped.Derive1(
+		config.Reactive(),
+		func(ctx *pumped.ResolveCtx, cfg *pumped.Controller[string]) (string, error) {
+			return "", fmt.Errorf("service failed")
+		},
+		pumped.WithTag(nameTag, "FailingService"),
+	)
+
+	// Try to resolve - will fail
+	_, _ = pumped.Resolve(scope, failingService)
+
+	// Export the graph and generate D2 output with failed executor marked
+	graph := scope.ExportDependencyGraph()
+	d2Output := ext.formatD2Diagram(graph, failingService)
+
+	// Validate D2 syntax
+	_, parseErr := d2parser.Parse("test.d2", strings.NewReader(d2Output), nil)
+	if parseErr != nil {
+		t.Errorf("D2 output with failed executor is not valid syntax: %v\nD2 Output:\n%s", parseErr, d2Output)
+	}
+
+	// Check for failed node styling
+	if !strings.Contains(d2Output, d2ColorFailed) {
+		t.Errorf("Expected failed node color '%s' in D2 output", d2ColorFailed)
+	}
+
+	if !strings.Contains(d2Output, d2StrokeFailed) {
+		t.Errorf("Expected failed node stroke '%s' in D2 output", d2StrokeFailed)
+	}
+
+	t.Logf("D2 output with failed executor:\n%s", d2Output)
+}
+
+func TestSanitizeD2NodeID(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"SimpleName", "SimpleName"},
+		{"Name With Spaces", "Name_With_Spaces"},
+		{"name-with-dashes", "name_with_dashes"},
+		{"name.with.dots", "name_with_dots"},
+		{"123startsWithNumber", "_123startsWithNumber"},
+		{"special!@#chars", "special___chars"},
+		{"", "_node"},
+		{"already_valid_name", "already_valid_name"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result := sanitizeD2NodeID(tt.input)
+			if result != tt.expected {
+				t.Errorf("sanitizeD2NodeID(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
 }
