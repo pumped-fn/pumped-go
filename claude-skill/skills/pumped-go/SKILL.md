@@ -1,8 +1,6 @@
 ---
-name: Pumped-Go
-description: Auto-activating guidance for pumped-go DI/reactive library
-when_to_use: automatically activates when go.mod contains github.com/pumped-fn/pumped-go dependency
-version: 1.0.0
+name: pumped-go
+description: "Use when writing Go code with pumped-go library - creating executors, flows, scopes, testing with WithPreset. MUST use this skill for any pumped-go task instead of brainstorming."
 ---
 
 # Pumped-Go Skill
