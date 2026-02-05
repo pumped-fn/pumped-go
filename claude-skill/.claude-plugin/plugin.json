@@ -1,0 +1,12 @@
+{
+  "name": "pumped-go",
+  "description": "Comprehensive Go guidance for pumped-go DI library - pattern enforcement, lifecycle management, testing support",
+  "version": "1.0.0",
+  "author": {
+    "name": "pumped-fn"
+  },
+  "homepage": "https://github.com/pumped-fn/pumped-go",
+  "repository": "https://github.com/pumped-fn/pumped-go",
+  "license": "MIT",
+  "keywords": ["go", "golang", "dependency-injection", "reactive-programming", "lifecycle-management"]
+}

@@ -88,3 +88,6 @@ docs/.doctrees/
 
 # Task runner
 .task/
+
+# Git worktrees
+.worktrees/
