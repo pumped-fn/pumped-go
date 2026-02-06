@@ -395,6 +395,38 @@ See [examples/](./examples/) for complete working examples:
 - `http-api/` - REST API with dependency injection
 - `cli-tasks/` - CLI application with services
 
+## Claude Code Skill
+
+This project includes a [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skill that provides automated guidance for writing pumped-go code — pattern enforcement, lifecycle management, testing support, and more.
+
+### Installing the Skill
+
+In Claude Code, run:
+
+```bash
+/plugin marketplace add pumped-fn/pumped-go
+/plugin install pumped-go@pumped-fn-pumped-go
+```
+
+Or from the CLI:
+
+```bash
+claude plugin marketplace add pumped-fn/pumped-go
+claude plugin install pumped-go@pumped-fn-pumped-go
+```
+
+Once installed, the skill **auto-activates** when your `go.mod` imports `github.com/pumped-fn/pumped-go`. No manual activation needed.
+
+### What It Provides
+
+- **Decision tree** for choosing Executors vs Flows vs plain functions
+- **Pattern enforcement** (package-level vars, controller usage, error handling)
+- **Production lifecycle** guidance (cleanup, graceful shutdown, signal handling)
+- **Testing strategies** with `WithPreset()` mocks
+- **Troubleshooting** for common issues
+
+See [`claude-skill/README.md`](./claude-skill/README.md) for full details.
+
 ## Contributing
 
 1. Fork the repository

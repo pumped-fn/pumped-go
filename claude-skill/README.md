@@ -140,17 +140,28 @@ func main() {
 
 ## Installation
 
-Install the skill via Claude Code marketplace:
+Add the marketplace and install the plugin in Claude Code:
 
 ```bash
-# Coming soon to Claude Code marketplace
+/plugin marketplace add pumped-fn/pumped-go
+/plugin install pumped-go@pumped-fn-pumped-go
 ```
 
-Or clone locally for development:
+Or from the CLI:
 
 ```bash
-git clone https://github.com/pumped-fn/pumped-go.git
-cd pumped-go/claude-skill
+claude plugin marketplace add pumped-fn/pumped-go
+claude plugin install pumped-go@pumped-fn-pumped-go
+```
+
+To install for a specific scope:
+
+```bash
+# Project-wide (shared via version control)
+claude plugin install pumped-go@pumped-fn-pumped-go --scope project
+
+# Local only (not shared)
+claude plugin install pumped-go@pumped-fn-pumped-go --scope local
 ```
 
 ## Examples

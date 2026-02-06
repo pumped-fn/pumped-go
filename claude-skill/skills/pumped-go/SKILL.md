@@ -1,6 +1,12 @@
 ---
 name: pumped-go
-description: "Use when writing Go code with pumped-go library - creating executors, flows, scopes, testing with WithPreset. MUST use this skill for any pumped-go task instead of brainstorming."
+description: |
+  Use when writing Go code with pumped-go library - creating executors, flows, scopes, testing with WithPreset. MUST use this skill for any pumped-go task instead of brainstorming.
+  <example>Create an executor with pumped.Provide for a database connection</example>
+  <example>Define a flow with pumped.Flow1 for handling HTTP requests</example>
+  <example>Set up reactive dependencies with pumped.Reactive and pumped.Derive1</example>
+  <example>Write tests using pumped.WithPreset to mock executors</example>
+  <example>Configure scope with extensions and graceful shutdown</example>
 ---
 
 # Pumped-Go Skill
