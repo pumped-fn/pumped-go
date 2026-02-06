@@ -12,20 +12,53 @@ import (
 	pumped "github.com/pumped-fn/pumped-go"
 )
 
+// NodeStatus represents the resolution state of a node in the dependency graph.
+type NodeStatus string
+
+const (
+	NodeStatusOK      NodeStatus = "ok"
+	NodeStatusFailed  NodeStatus = "failed"
+	NodeStatusPending NodeStatus = "pending"
+)
+
+// GraphNode represents a single node in the dependency graph.
+type GraphNode struct {
+	Name   string
+	Status NodeStatus
+}
+
+// GraphEdge represents a directed edge between two nodes.
+type GraphEdge struct {
+	From string
+	To   string
+}
+
+// GraphData is the format-agnostic representation of a dependency graph.
+// Formatters receive this struct and produce a string visualization.
+type GraphData struct {
+	Nodes []GraphNode
+	Edges []GraphEdge
+}
+
+// GraphFormatter converts dependency graph data into a string representation.
+// Implement this interface to provide custom graph output formats (e.g., Mermaid, PlantUML, DOT).
+type GraphFormatter interface {
+	FormatGraph(data GraphData) string
+}
+
 // GraphDebugExtension logs dependency graph visualization when errors occur.
 //
 // Usage:
 //
-//	// Human-readable formatted output (with line breaks)
+//	// Human-readable formatted output with D2 diagrams
 //	handler := extensions.NewHumanHandler(os.Stdout, slog.LevelError)
-//	ext := extensions.NewGraphDebugExtension(handler)
+//	ext := extensions.NewGraphDebugExtension(handler, extensions.NewD2Formatter())
 //
-//	// Structured JSON logging (compact, machine-readable)
-//	handler := slog.NewJSONHandler(os.Stdout, nil)
-//	ext := extensions.NewGraphDebugExtension(handler)
+//	// Custom graph format
+//	ext := extensions.NewGraphDebugExtension(handler, myCustomFormatter)
 //
 //	// Silent (for testing)
-//	ext := extensions.NewGraphDebugExtension(extensions.NewSilentHandler())
+//	ext := extensions.NewGraphDebugExtension(extensions.NewSilentHandler(), extensions.NewD2Formatter())
 //
 // The extension logs at ERROR level for both resolution errors and flow panics.
 type GraphDebugExtension struct {
@@ -36,11 +69,13 @@ type GraphDebugExtension struct {
 	resolvedExecutors map[pumped.AnyExecutor]bool
 	failedExecutors   map[pumped.AnyExecutor]error
 	logger            *slog.Logger
+	formatter         GraphFormatter
 }
 
 // NewGraphDebugExtension creates a new graph debug extension.
 // logHandler: slog.Handler for logging (use HumanHandler for formatted output, or any other slog.Handler)
-func NewGraphDebugExtension(logHandler slog.Handler) *GraphDebugExtension {
+// formatter: GraphFormatter for rendering the dependency graph (use NewD2Formatter() for D2 diagrams)
+func NewGraphDebugExtension(logHandler slog.Handler, formatter GraphFormatter) *GraphDebugExtension {
 	logger := slog.New(logHandler)
 	return &GraphDebugExtension{
 		BaseExtension:     pumped.NewBaseExtension("graph-debug"),
@@ -48,6 +83,7 @@ func NewGraphDebugExtension(logHandler slog.Handler) *GraphDebugExtension {
 		resolvedExecutors: make(map[pumped.AnyExecutor]bool),
 		failedExecutors:   make(map[pumped.AnyExecutor]error),
 		logger:            logger,
+		formatter:         formatter,
 	}
 }
 
@@ -93,134 +129,80 @@ func (e *GraphDebugExtension) OnFlowPanic(execCtx *pumped.ExecutionCtx, recovere
 	return nil // Don't suppress the error
 }
 
-// D2 status colors
-const (
-	d2ColorOK      = "#90EE90" // Light green
-	d2ColorFailed  = "#FFB6C1" // Light red
-	d2ColorPending = "#D3D3D3" // Light gray
-	d2ColorEmpty   = "#F5F5F5" // Very light gray
-	d2StrokeFailed = "#FF0000" // Red
-)
-
-// sanitizeD2NodeID converts an executor name to a valid D2 node ID
-func sanitizeD2NodeID(name string) string {
-	// Replace spaces with underscores, keep only alphanumeric and underscores
-	re := regexp.MustCompile(`[^a-zA-Z0-9_]`)
-	sanitized := strings.ReplaceAll(name, " ", "_")
-	sanitized = re.ReplaceAllString(sanitized, "_")
-	// Ensure it doesn't start with a number
-	if len(sanitized) > 0 && sanitized[0] >= '0' && sanitized[0] <= '9' {
-		sanitized = "_" + sanitized
-	}
-	if sanitized == "" {
-		sanitized = "_node"
-	}
-	return sanitized
-}
-
-// formatD2Diagram generates a D2 diagram representation of the dependency graph
-func (e *GraphDebugExtension) formatD2Diagram(graph map[pumped.AnyExecutor][]pumped.AnyExecutor, failedExecutor pumped.AnyExecutor) string {
-	var sb strings.Builder
-
-	sb.WriteString("direction: down\n\n")
-
+// buildGraphData converts internal executor state into format-agnostic GraphData.
+func (e *GraphDebugExtension) buildGraphData(graph map[pumped.AnyExecutor][]pumped.AnyExecutor, failedExecutor pumped.AnyExecutor) GraphData {
 	// Handle empty graph
 	if len(graph) == 0 {
-		sb.WriteString(fmt.Sprintf("empty: \"No reactive dependencies tracked\" {\n  style.fill: \"%s\"\n}\n", d2ColorEmpty))
-		return sb.String()
+		return GraphData{}
 	}
 
-	// Collect all unique nodes
-	allNodes := make(map[pumped.AnyExecutor]bool)
+	// Collect all unique executors
+	allExecs := make(map[pumped.AnyExecutor]bool)
 	for parent, children := range graph {
-		allNodes[parent] = true
+		allExecs[parent] = true
 		for _, child := range children {
-			allNodes[child] = true
+			allExecs[child] = true
 		}
 	}
 
-	// Sort nodes by name for deterministic output
-	type nodeEntry struct {
+	// Build nodes sorted by name for deterministic output
+	type execEntry struct {
 		executor pumped.AnyExecutor
 		name     string
 	}
-	nodes := make([]nodeEntry, 0, len(allNodes))
-	for exec := range allNodes {
-		nodes = append(nodes, nodeEntry{
+	entries := make([]execEntry, 0, len(allExecs))
+	for exec := range allExecs {
+		entries = append(entries, execEntry{
 			executor: exec,
 			name:     e.getExecutorName(exec),
 		})
 	}
-	sort.Slice(nodes, func(i, j int) bool {
-		return nodes[i].name < nodes[j].name
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].name < entries[j].name
 	})
 
-	// Emit node declarations with styling
-	for _, node := range nodes {
-		nodeID := sanitizeD2NodeID(node.name)
-		label := node.name
-
-		// Determine status and styling
-		var fill, stroke string
-		var strokeWidth int
-
-		if node.executor == failedExecutor {
-			fill = d2ColorFailed
-			stroke = d2StrokeFailed
-			strokeWidth = 3
-		} else if e.resolvedExecutors[node.executor] {
-			fill = d2ColorOK
+	nodes := make([]GraphNode, 0, len(entries))
+	for _, entry := range entries {
+		var status NodeStatus
+		if entry.executor == failedExecutor {
+			status = NodeStatusFailed
+		} else if e.resolvedExecutors[entry.executor] {
+			status = NodeStatusOK
 		} else {
-			fill = d2ColorPending
+			status = NodeStatusPending
 		}
-
-		sb.WriteString(fmt.Sprintf("%s: \"%s\" {\n", nodeID, label))
-		sb.WriteString(fmt.Sprintf("  style.fill: \"%s\"\n", fill))
-		if stroke != "" {
-			sb.WriteString(fmt.Sprintf("  style.stroke: \"%s\"\n", stroke))
-			sb.WriteString(fmt.Sprintf("  style.stroke-width: %d\n", strokeWidth))
-		}
-		sb.WriteString("}\n")
+		nodes = append(nodes, GraphNode{
+			Name:   entry.name,
+			Status: status,
+		})
 	}
 
-	sb.WriteString("\n")
-
-	// Collect and sort connections for deterministic output
-	type connection struct {
-		from string
-		to   string
-	}
-	var connections []connection
-
+	// Build edges sorted for deterministic output
+	var edges []GraphEdge
 	for parent, children := range graph {
-		parentID := sanitizeD2NodeID(e.getExecutorName(parent))
+		parentName := e.getExecutorName(parent)
 		for _, child := range children {
-			childID := sanitizeD2NodeID(e.getExecutorName(child))
-			connections = append(connections, connection{from: parentID, to: childID})
+			childName := e.getExecutorName(child)
+			edges = append(edges, GraphEdge{From: parentName, To: childName})
 		}
 	}
-
-	sort.Slice(connections, func(i, j int) bool {
-		if connections[i].from != connections[j].from {
-			return connections[i].from < connections[j].from
+	sort.Slice(edges, func(i, j int) bool {
+		if edges[i].From != edges[j].From {
+			return edges[i].From < edges[j].From
 		}
-		return connections[i].to < connections[j].to
+		return edges[i].To < edges[j].To
 	})
 
-	// Emit connections
-	for _, conn := range connections {
-		sb.WriteString(fmt.Sprintf("%s -> %s\n", conn.from, conn.to))
-	}
-
-	return sb.String()
+	return GraphData{Nodes: nodes, Edges: edges}
 }
 
 func (e *GraphDebugExtension) formatDependencyGraph(scope *pumped.Scope, failedExecutor pumped.AnyExecutor, failedErr error) string {
 	var sb strings.Builder
 	graph := scope.ExportDependencyGraph()
 
+	data := e.buildGraphData(graph, failedExecutor)
 	sb.WriteString("\n")
-	sb.WriteString(e.formatD2Diagram(graph, failedExecutor))
+	sb.WriteString(e.formatter.FormatGraph(data))
 
 	// Show error details for the failed executor
 	if failedErr != nil {
@@ -239,11 +221,98 @@ func (e *GraphDebugExtension) getExecutorName(exec pumped.AnyExecutor) string {
 	return fmt.Sprintf("Executor_%p", exec)
 }
 
-// SilentHandler is a slog.Handler that discards all log output
-// Useful for testing when you don't want log output
+// --- D2Formatter: Built-in GraphFormatter producing D2 diagram syntax ---
+
+// D2 status colors
+const (
+	d2ColorOK      = "#90EE90" // Light green
+	d2ColorFailed  = "#FFB6C1" // Light red
+	d2ColorPending = "#D3D3D3" // Light gray
+	d2ColorEmpty   = "#F5F5F5" // Very light gray
+	d2StrokeFailed = "#FF0000" // Red
+)
+
+// D2Formatter renders dependency graphs as D2 diagram text.
+// See https://d2lang.com for the D2 language specification.
+type D2Formatter struct{}
+
+// NewD2Formatter creates a new D2 diagram formatter.
+func NewD2Formatter() *D2Formatter {
+	return &D2Formatter{}
+}
+
+// FormatGraph produces a D2 diagram string from the graph data.
+func (f *D2Formatter) FormatGraph(data GraphData) string {
+	var sb strings.Builder
+
+	sb.WriteString("direction: down\n\n")
+
+	// Handle empty graph
+	if len(data.Nodes) == 0 {
+		sb.WriteString(fmt.Sprintf("empty: \"No reactive dependencies tracked\" {\n  style.fill: \"%s\"\n}\n", d2ColorEmpty))
+		return sb.String()
+	}
+
+	// Emit node declarations with styling
+	for _, node := range data.Nodes {
+		nodeID := sanitizeD2NodeID(node.Name)
+
+		var fill, stroke string
+		var strokeWidth int
+
+		switch node.Status {
+		case NodeStatusFailed:
+			fill = d2ColorFailed
+			stroke = d2StrokeFailed
+			strokeWidth = 3
+		case NodeStatusOK:
+			fill = d2ColorOK
+		default:
+			fill = d2ColorPending
+		}
+
+		sb.WriteString(fmt.Sprintf("%s: \"%s\" {\n", nodeID, node.Name))
+		sb.WriteString(fmt.Sprintf("  style.fill: \"%s\"\n", fill))
+		if stroke != "" {
+			sb.WriteString(fmt.Sprintf("  style.stroke: \"%s\"\n", stroke))
+			sb.WriteString(fmt.Sprintf("  style.stroke-width: %d\n", strokeWidth))
+		}
+		sb.WriteString("}\n")
+	}
+
+	sb.WriteString("\n")
+
+	// Emit connections
+	for _, edge := range data.Edges {
+		fromID := sanitizeD2NodeID(edge.From)
+		toID := sanitizeD2NodeID(edge.To)
+		sb.WriteString(fmt.Sprintf("%s -> %s\n", fromID, toID))
+	}
+
+	return sb.String()
+}
+
+// sanitizeD2NodeID converts a node name to a valid D2 node ID.
+func sanitizeD2NodeID(name string) string {
+	re := regexp.MustCompile(`[^a-zA-Z0-9_]`)
+	sanitized := strings.ReplaceAll(name, " ", "_")
+	sanitized = re.ReplaceAllString(sanitized, "_")
+	if len(sanitized) > 0 && sanitized[0] >= '0' && sanitized[0] <= '9' {
+		sanitized = "_" + sanitized
+	}
+	if sanitized == "" {
+		sanitized = "_node"
+	}
+	return sanitized
+}
+
+// --- SilentHandler ---
+
+// SilentHandler is a slog.Handler that discards all log output.
+// Useful for testing when you don't want log output.
 type SilentHandler struct{}
 
-// NewSilentHandler creates a new silent log handler
+// NewSilentHandler creates a new silent log handler.
 func NewSilentHandler() *SilentHandler {
 	return &SilentHandler{}
 }
@@ -264,14 +333,16 @@ func (h *SilentHandler) WithGroup(name string) slog.Handler {
 	return h // Return self, no state to modify
 }
 
+// --- HumanHandler ---
+
 // HumanHandler is a slog.Handler that formats logs for human readability
-// with proper line breaks and visual formatting (especially for dependency graphs)
+// with proper line breaks and visual formatting (especially for dependency graphs).
 type HumanHandler struct {
 	writer io.Writer
 	level  slog.Level
 }
 
-// NewHumanHandler creates a new human-readable log handler
+// NewHumanHandler creates a new human-readable log handler.
 func NewHumanHandler(writer io.Writer, level slog.Level) *HumanHandler {
 	return &HumanHandler{
 		writer: writer,

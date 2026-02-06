@@ -21,7 +21,7 @@ func TestGraphDebugExtension_OnError(t *testing.T) {
 	handler := NewHumanHandler(multiWriter, slog.LevelError)
 
 	scope := pumped.NewScope(
-		pumped.WithExtension(NewGraphDebugExtension(handler)),
+		pumped.WithExtension(NewGraphDebugExtension(handler, NewD2Formatter())),
 	)
 	defer scope.Dispose()
 
@@ -113,7 +113,7 @@ func TestGraphDebugExtension_OnError(t *testing.T) {
 }
 
 func TestGraphDebugExtension_TracksResolvedExecutors(t *testing.T) {
-	ext := NewGraphDebugExtension(NewSilentHandler())
+	ext := NewGraphDebugExtension(NewSilentHandler(), NewD2Formatter())
 	scope := pumped.NewScope(
 		pumped.WithExtension(ext),
 	)
@@ -241,7 +241,7 @@ func TestGraphDebugExtension_OnFlowPanic(t *testing.T) {
 	handler := NewHumanHandler(multiWriter, slog.LevelError)
 
 	scope := pumped.NewScope(
-		pumped.WithExtension(NewGraphDebugExtension(handler)),
+		pumped.WithExtension(NewGraphDebugExtension(handler, NewD2Formatter())),
 	)
 	defer scope.Dispose()
 
@@ -307,7 +307,7 @@ func TestGraphDebugExtension_OnFlowPanic(t *testing.T) {
 }
 
 func TestGraphDebugExtension_GetExecutorName(t *testing.T) {
-	ext := NewGraphDebugExtension(NewSilentHandler())
+	ext := NewGraphDebugExtension(NewSilentHandler(), NewD2Formatter())
 	nameTag := pumped.NewTag[string]("executor.name")
 
 	// Test with named executor
@@ -370,7 +370,7 @@ func TestSilentHandler(t *testing.T) {
 	}
 
 	// Integration test: Verify no output when using SilentHandler
-	ext := NewGraphDebugExtension(handler)
+	ext := NewGraphDebugExtension(handler, NewD2Formatter())
 	scope := pumped.NewScope(
 		pumped.WithExtension(ext),
 	)
@@ -400,7 +400,7 @@ func TestGraphDebugExtension_ComplexDependencyGraph(t *testing.T) {
 	handler := NewHumanHandler(os.Stdout, slog.LevelError)
 
 	scope := pumped.NewScope(
-		pumped.WithExtension(NewGraphDebugExtension(handler)),
+		pumped.WithExtension(NewGraphDebugExtension(handler, NewD2Formatter())),
 	)
 	defer scope.Dispose()
 
@@ -563,7 +563,7 @@ func TestGraphDebugExtension_MultipleFailures(t *testing.T) {
 	handler := NewHumanHandler(os.Stdout, slog.LevelError)
 
 	scope := pumped.NewScope(
-		pumped.WithExtension(NewGraphDebugExtension(handler)),
+		pumped.WithExtension(NewGraphDebugExtension(handler, NewD2Formatter())),
 	)
 	defer scope.Dispose()
 
@@ -631,7 +631,7 @@ func TestGraphDebugExtension_LargeGraphWithUpdate(t *testing.T) {
 	handler := NewHumanHandler(os.Stdout, slog.LevelError)
 
 	scope := pumped.NewScope(
-		pumped.WithExtension(NewGraphDebugExtension(handler)),
+		pumped.WithExtension(NewGraphDebugExtension(handler, NewD2Formatter())),
 	)
 	defer scope.Dispose()
 
@@ -857,7 +857,7 @@ func TestGraphDebugExtension_DeeplyNestedDependencies(t *testing.T) {
 	handler := NewHumanHandler(multiWriter, slog.LevelError)
 
 	scope := pumped.NewScope(
-		pumped.WithExtension(NewGraphDebugExtension(handler)),
+		pumped.WithExtension(NewGraphDebugExtension(handler, NewD2Formatter())),
 	)
 	defer scope.Dispose()
 
@@ -1011,7 +1011,7 @@ func TestGraphDebugExtension_NestedWithBranching(t *testing.T) {
 	handler := NewHumanHandler(multiWriter, slog.LevelError)
 
 	scope := pumped.NewScope(
-		pumped.WithExtension(NewGraphDebugExtension(handler)),
+		pumped.WithExtension(NewGraphDebugExtension(handler, NewD2Formatter())),
 	)
 	defer scope.Dispose()
 
@@ -1174,7 +1174,7 @@ func TestGraphDebugExtension_NestedWithBranching(t *testing.T) {
 }
 
 func TestFormatD2Diagram_ValidD2Syntax(t *testing.T) {
-	ext := NewGraphDebugExtension(NewSilentHandler())
+	ext := NewGraphDebugExtension(NewSilentHandler(), NewD2Formatter())
 	scope := pumped.NewScope(
 		pumped.WithExtension(ext),
 	)
@@ -1214,9 +1214,10 @@ func TestFormatD2Diagram_ValidD2Syntax(t *testing.T) {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
-	// Export the graph and generate D2 output
+	// Export the graph and generate D2 output via GraphFormatter
 	graph := scope.ExportDependencyGraph()
-	d2Output := ext.formatD2Diagram(graph, nil)
+	data := ext.buildGraphData(graph, nil)
+	d2Output := NewD2Formatter().FormatGraph(data)
 
 	// Validate D2 syntax by parsing with d2parser
 	_, parseErr := d2parser.Parse("test.d2", strings.NewReader(d2Output), nil)
@@ -1255,11 +1256,8 @@ func TestFormatD2Diagram_ValidD2Syntax(t *testing.T) {
 }
 
 func TestFormatD2Diagram_EmptyGraph(t *testing.T) {
-	ext := NewGraphDebugExtension(NewSilentHandler())
-
-	// Create empty graph
-	graph := make(map[pumped.AnyExecutor][]pumped.AnyExecutor)
-	d2Output := ext.formatD2Diagram(graph, nil)
+	// Test D2Formatter directly with empty GraphData
+	d2Output := NewD2Formatter().FormatGraph(GraphData{})
 
 	// Validate D2 syntax
 	_, parseErr := d2parser.Parse("test.d2", strings.NewReader(d2Output), nil)
@@ -1276,7 +1274,7 @@ func TestFormatD2Diagram_EmptyGraph(t *testing.T) {
 }
 
 func TestFormatD2Diagram_WithFailedExecutor(t *testing.T) {
-	ext := NewGraphDebugExtension(NewSilentHandler())
+	ext := NewGraphDebugExtension(NewSilentHandler(), NewD2Formatter())
 	scope := pumped.NewScope(
 		pumped.WithExtension(ext),
 	)
@@ -1305,7 +1303,8 @@ func TestFormatD2Diagram_WithFailedExecutor(t *testing.T) {
 
 	// Export the graph and generate D2 output with failed executor marked
 	graph := scope.ExportDependencyGraph()
-	d2Output := ext.formatD2Diagram(graph, failingService)
+	data := ext.buildGraphData(graph, failingService)
+	d2Output := NewD2Formatter().FormatGraph(data)
 
 	// Validate D2 syntax
 	_, parseErr := d2parser.Parse("test.d2", strings.NewReader(d2Output), nil)
