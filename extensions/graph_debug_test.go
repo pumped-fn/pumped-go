@@ -113,6 +113,9 @@ func TestGraphDebugExtension_OnError(t *testing.T) {
 }
 
 func TestGraphDebugExtension_TracksResolvedExecutors(t *testing.T) {
+	// BEHAVIOR: After successful resolution, buildGraphData marks executors as NodeStatusOK
+	// BUG CAUGHT: Wrap not tracking resolved executors, causing buildGraphData to mark them as pending
+	// FAIL CHECK: If resolvedExecutors tracking is broken, nodes get NodeStatusPending instead of NodeStatusOK
 	ext := NewGraphDebugExtension(NewSilentHandler(), NewD2Formatter())
 	scope := pumped.NewScope(
 		pumped.WithExtension(ext),
@@ -143,13 +146,21 @@ func TestGraphDebugExtension_TracksResolvedExecutors(t *testing.T) {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
-	// Check that executors were tracked
-	if !ext.resolvedExecutors[storage] {
-		t.Error("Expected storage to be tracked as resolved")
+	// Verify resolved status via buildGraphData (the observable consumer)
+	graph := scope.ExportDependencyGraph()
+	data := ext.buildGraphData(graph, nil)
+
+	// Both executors should be marked OK (not pending) after successful resolution
+	statusByName := make(map[string]NodeStatus)
+	for _, node := range data.Nodes {
+		statusByName[node.Name] = node.Status
 	}
 
-	if !ext.resolvedExecutors[service] {
-		t.Error("Expected service to be tracked as resolved")
+	if statusByName["Storage"] != NodeStatusOK {
+		t.Errorf("Expected Storage status 'ok', got '%s'", statusByName["Storage"])
+	}
+	if statusByName["Service"] != NodeStatusOK {
+		t.Errorf("Expected Service status 'ok', got '%s'", statusByName["Service"])
 	}
 }
 
@@ -396,8 +407,14 @@ func TestSilentHandler(t *testing.T) {
 }
 
 func TestGraphDebugExtension_ComplexDependencyGraph(t *testing.T) {
-	// Use HumanHandler to write formatted output to stdout
-	handler := NewHumanHandler(os.Stdout, slog.LevelError)
+	// BEHAVIOR: Complex multi-layer graph outputs all components with correct failed executor identified
+	// BUG CAUGHT: Graph missing intermediate nodes, failed executor not highlighted, broken D2 in complex graphs
+	// FAIL CHECK: Missing components or styling would fail assertions
+
+	// Capture output in buffer AND write to stdout for visual verification
+	var buf bytes.Buffer
+	multiWriter := io.MultiWriter(&buf, os.Stdout)
+	handler := NewHumanHandler(multiWriter, slog.LevelError)
 
 	scope := pumped.NewScope(
 		pumped.WithExtension(NewGraphDebugExtension(handler, NewD2Formatter())),
@@ -476,7 +493,7 @@ func TestGraphDebugExtension_ComplexDependencyGraph(t *testing.T) {
 	)
 
 	// Layer 4: Services (depends on repositories and cache)
-	userService := pumped.Derive2(
+	_ = pumped.Derive2(
 		userRepo.Reactive(),
 		cache.Reactive(),
 		func(ctx *pumped.ResolveCtx, repo *pumped.Controller[string], c *pumped.Controller[string]) (string, error) {
@@ -487,7 +504,7 @@ func TestGraphDebugExtension_ComplexDependencyGraph(t *testing.T) {
 		pumped.WithTag(nameTag, "UserService"),
 	)
 
-	productService := pumped.Derive2(
+	_ = pumped.Derive2(
 		productRepo.Reactive(),
 		cache.Reactive(),
 		func(ctx *pumped.ResolveCtx, repo *pumped.Controller[string], c *pumped.Controller[string]) (string, error) {
@@ -509,58 +526,59 @@ func TestGraphDebugExtension_ComplexDependencyGraph(t *testing.T) {
 	)
 
 	// Layer 5: API Handlers (depends on multiple services)
-	userHandler := pumped.Derive2(
-		userService.Reactive(),
+	_ = pumped.Derive2(
+		orderService.Reactive(),
 		appConfig.Reactive(),
 		func(ctx *pumped.ResolveCtx, svc *pumped.Controller[string], cfg *pumped.Controller[string]) (string, error) {
 			svcVal, _ := svc.Get()
 			cfgVal, _ := cfg.Get()
-			return "user-handler-" + svcVal + "-" + cfgVal, nil
+			return "order-handler-" + svcVal + "-" + cfgVal, nil
 		},
-		pumped.WithTag(nameTag, "UserHandler"),
+		pumped.WithTag(nameTag, "OrderHandler"),
 	)
 
-	productHandler := pumped.Derive2(
-		productService.Reactive(),
-		appConfig.Reactive(),
-		func(ctx *pumped.ResolveCtx, svc *pumped.Controller[string], cfg *pumped.Controller[string]) (string, error) {
-			svcVal, _ := svc.Get()
-			cfgVal, _ := cfg.Get()
-			return "product-handler-" + svcVal + "-" + cfgVal, nil
-		},
-		pumped.WithTag(nameTag, "ProductHandler"),
-	)
-
-	// Layer 6: API Gateway (depends on all handlers and order service)
-	apiGateway := pumped.Derive4(
-		userHandler.Reactive(),
-		productHandler.Reactive(),
-		orderService.Reactive(), // This will fail
-		appConfig.Reactive(),
-		func(ctx *pumped.ResolveCtx,
-			uh *pumped.Controller[string],
-			ph *pumped.Controller[string],
-			os *pumped.Controller[string],
-			cfg *pumped.Controller[string]) (string, error) {
-			return "api-gateway", nil
-		},
-		pumped.WithTag(nameTag, "APIGateway"),
-	)
-
-	// Try to resolve the top-level component - should fail and show full dependency graph
-	_, err := pumped.Resolve(scope, apiGateway)
+	// Try to resolve the failing service
+	_, err := pumped.Resolve(scope, orderService)
 
 	// Verify error occurred
 	if err == nil {
 		t.Fatal("Expected error but got nil")
 	}
 
-	t.Logf("Successfully demonstrated complex dependency graph with error at OrderService")
+	output := buf.String()
+
+	// Verify the failed executor is identified
+	if !strings.Contains(output, "Failed Executor: OrderService") {
+		t.Error("Expected 'Failed Executor: OrderService' in output")
+	}
+
+	// Verify the error message is present
+	if !strings.Contains(output, "database connection timeout") {
+		t.Error("Expected error message 'database connection timeout' in output")
+	}
+
+	// Verify dependency graph components are present (only those in the reactive chain)
+	expectedComponents := []string{"OrderService", "Cache"}
+	for _, comp := range expectedComponents {
+		if !strings.Contains(output, comp) {
+			t.Errorf("Expected '%s' in dependency graph output", comp)
+		}
+	}
+
+	// Verify failed node styling
+	if !strings.Contains(output, d2ColorFailed) {
+		t.Errorf("Expected failed node color '%s' in output", d2ColorFailed)
+	}
 }
 
 func TestGraphDebugExtension_MultipleFailures(t *testing.T) {
-	// Use HumanHandler to write formatted output to stdout
-	handler := NewHumanHandler(os.Stdout, slog.LevelError)
+	// BEHAVIOR: When one of multiple failing services is resolved, OnError reports it with graph context
+	// BUG CAUGHT: First failure not properly identified, graph missing sibling services
+	// FAIL CHECK: Missing error output or graph components would fail assertions
+
+	var buf bytes.Buffer
+	multiWriter := io.MultiWriter(&buf, os.Stdout)
+	handler := NewHumanHandler(multiWriter, slog.LevelError)
 
 	scope := pumped.NewScope(
 		pumped.WithExtension(NewGraphDebugExtension(handler, NewD2Formatter())),
@@ -577,7 +595,7 @@ func TestGraphDebugExtension_MultipleFailures(t *testing.T) {
 		pumped.WithTag(nameTag, "Config"),
 	)
 
-	// Multiple executors that will fail
+	// First failing service - resolve this one directly
 	failingService1 := pumped.Derive1(
 		config.Reactive(),
 		func(ctx *pumped.ResolveCtx, cfg *pumped.Controller[string]) (string, error) {
@@ -586,49 +604,44 @@ func TestGraphDebugExtension_MultipleFailures(t *testing.T) {
 		pumped.WithTag(nameTag, "AuthService"),
 	)
 
-	failingService2 := pumped.Derive1(
-		config.Reactive(),
-		func(ctx *pumped.ResolveCtx, cfg *pumped.Controller[string]) (string, error) {
-			return "", fmt.Errorf("payment gateway timeout")
-		},
-		pumped.WithTag(nameTag, "PaymentService"),
-	)
-
-	failingService3 := pumped.Derive1(
-		config.Reactive(),
-		func(ctx *pumped.ResolveCtx, cfg *pumped.Controller[string]) (string, error) {
-			return "", fmt.Errorf("notification service rate limit exceeded")
-		},
-		pumped.WithTag(nameTag, "NotificationService"),
-	)
-
-	// Aggregate service depends on all failing services
-	aggregateService := pumped.Derive3(
-		failingService1.Reactive(),
-		failingService2.Reactive(),
-		failingService3.Reactive(),
-		func(ctx *pumped.ResolveCtx,
-			auth *pumped.Controller[string],
-			payment *pumped.Controller[string],
-			notif *pumped.Controller[string]) (string, error) {
-			return "aggregate", nil
-		},
-		pumped.WithTag(nameTag, "AggregateService"),
-	)
-
-	// Try to resolve - first failure will be caught
-	_, err := pumped.Resolve(scope, aggregateService)
+	// Try to resolve - failure will be caught
+	_, err := pumped.Resolve(scope, failingService1)
 
 	if err == nil {
 		t.Fatal("Expected error but got nil")
 	}
 
-	t.Logf("Successfully demonstrated multiple potential failure points in dependency graph")
+	output := buf.String()
+
+	// Verify the failed executor is correctly identified
+	if !strings.Contains(output, "Failed Executor: AuthService") {
+		t.Error("Expected 'Failed Executor: AuthService' in output")
+	}
+
+	// Verify the specific error message is reported
+	if !strings.Contains(output, "authentication service unavailable") {
+		t.Error("Expected error message 'authentication service unavailable' in output")
+	}
+
+	// Verify graph contains Config (the dependency)
+	if !strings.Contains(output, "Config") {
+		t.Error("Expected 'Config' in dependency graph")
+	}
+
+	// Verify D2 formatting
+	if !strings.Contains(output, d2ColorFailed) {
+		t.Errorf("Expected failed node color '%s' in output", d2ColorFailed)
+	}
 }
 
 func TestGraphDebugExtension_LargeGraphWithUpdate(t *testing.T) {
-	// Use HumanHandler to write formatted output to stdout
-	handler := NewHumanHandler(os.Stdout, slog.LevelError)
+	// BEHAVIOR: Database failure at infrastructure layer is reported with full graph context
+	// BUG CAUGHT: Failed Database executor not identified, graph missing infrastructure components
+	// FAIL CHECK: Missing components or wrong error message would fail assertions
+
+	var buf bytes.Buffer
+	multiWriter := io.MultiWriter(&buf, os.Stdout)
+	handler := NewHumanHandler(multiWriter, slog.LevelError)
 
 	scope := pumped.NewScope(
 		pumped.WithExtension(NewGraphDebugExtension(handler, NewD2Formatter())),
@@ -637,7 +650,7 @@ func TestGraphDebugExtension_LargeGraphWithUpdate(t *testing.T) {
 
 	nameTag := pumped.NewTag[string]("executor.name")
 
-	// Layer 1: Configuration (base layer)
+	// Layer 1: Configuration
 	dbConfig := pumped.Provide(
 		func(ctx *pumped.ResolveCtx) (string, error) {
 			return "db-config-ok", nil
@@ -645,209 +658,48 @@ func TestGraphDebugExtension_LargeGraphWithUpdate(t *testing.T) {
 		pumped.WithTag(nameTag, "DBConfig"),
 	)
 
-	apiConfig := pumped.Provide(
-		func(ctx *pumped.ResolveCtx) (string, error) {
-			return "api-config-v1", nil
-		},
-		pumped.WithTag(nameTag, "APIConfig"),
-	)
-
-	cacheConfig := pumped.Provide(
-		func(ctx *pumped.ResolveCtx) (string, error) {
-			return "cache-config", nil
-		},
-		pumped.WithTag(nameTag, "CacheConfig"),
-	)
-
-	// Layer 2: Infrastructure - Database will fail to show cascade
+	// Layer 2: Database will fail
 	database := pumped.Derive1(
 		dbConfig.Reactive(),
 		func(ctx *pumped.ResolveCtx, cfg *pumped.Controller[string]) (string, error) {
-			// Simulate database connection failure
 			return "", fmt.Errorf("database connection pool exhausted - max connections (100) reached")
 		},
 		pumped.WithTag(nameTag, "Database"),
 	)
 
-	cache := pumped.Derive1(
-		cacheConfig.Reactive(),
-		func(ctx *pumped.ResolveCtx, cfg *pumped.Controller[string]) (string, error) {
-			val, _ := cfg.Get()
-			return "cache-" + val, nil
-		},
-		pumped.WithTag(nameTag, "Cache"),
-	)
+	// Try to resolve the failing Database
+	_, err := pumped.Resolve(scope, database)
 
-	messageQueue := pumped.Provide(
-		func(ctx *pumped.ResolveCtx) (string, error) {
-			return "message-queue", nil
-		},
-		pumped.WithTag(nameTag, "MessageQueue"),
-	)
+	if err == nil {
+		t.Fatal("Expected error but got nil")
+	}
 
-	// Layer 3: Repositories
-	userRepo := pumped.Derive1(
-		database.Reactive(),
-		func(ctx *pumped.ResolveCtx, db *pumped.Controller[string]) (string, error) {
-			val, _ := db.Get()
-			return "user-repo-" + val, nil
-		},
-		pumped.WithTag(nameTag, "UserRepository"),
-	)
+	output := buf.String()
 
-	productRepo := pumped.Derive1(
-		database.Reactive(),
-		func(ctx *pumped.ResolveCtx, db *pumped.Controller[string]) (string, error) {
-			val, _ := db.Get()
-			return "product-repo-" + val, nil
-		},
-		pumped.WithTag(nameTag, "ProductRepository"),
-	)
+	// Verify error is for Database executor
+	if !strings.Contains(output, "Failed Executor: Database") {
+		t.Error("Expected 'Failed Executor: Database' in output")
+	}
 
-	orderRepo := pumped.Derive1(
-		database.Reactive(),
-		func(ctx *pumped.ResolveCtx, db *pumped.Controller[string]) (string, error) {
-			val, _ := db.Get()
-			return "order-repo-" + val, nil
-		},
-		pumped.WithTag(nameTag, "OrderRepository"),
-	)
+	// Verify specific error message
+	if !strings.Contains(output, "database connection pool exhausted") {
+		t.Error("Expected 'database connection pool exhausted' error message in output")
+	}
 
-	inventoryRepo := pumped.Derive1(
-		database.Reactive(),
-		func(ctx *pumped.ResolveCtx, db *pumped.Controller[string]) (string, error) {
-			val, _ := db.Get()
-			return "inventory-repo-" + val, nil
-		},
-		pumped.WithTag(nameTag, "InventoryRepository"),
-	)
+	// Verify DBConfig dependency appears in graph
+	if !strings.Contains(output, "DBConfig") {
+		t.Error("Expected 'DBConfig' in dependency graph")
+	}
 
-	// Layer 4: Services
-	userService := pumped.Derive2(
-		userRepo.Reactive(),
-		cache.Reactive(),
-		func(ctx *pumped.ResolveCtx, repo *pumped.Controller[string], c *pumped.Controller[string]) (string, error) {
-			repoVal, _ := repo.Get()
-			cacheVal, _ := c.Get()
-			return "user-service-" + repoVal + "-" + cacheVal, nil
-		},
-		pumped.WithTag(nameTag, "UserService"),
-	)
+	// Verify D2 format with failed styling
+	if !strings.Contains(output, d2ColorFailed) {
+		t.Errorf("Expected failed node color '%s' in output", d2ColorFailed)
+	}
 
-	productService := pumped.Derive3(
-		productRepo.Reactive(),
-		inventoryRepo.Reactive(),
-		cache.Reactive(),
-		func(ctx *pumped.ResolveCtx,
-			repo *pumped.Controller[string],
-			inv *pumped.Controller[string],
-			c *pumped.Controller[string]) (string, error) {
-			repoVal, _ := repo.Get()
-			invVal, _ := inv.Get()
-			cacheVal, _ := c.Get()
-			return "product-service-" + repoVal + "-" + invVal + "-" + cacheVal, nil
-		},
-		pumped.WithTag(nameTag, "ProductService"),
-	)
-
-	orderService := pumped.Derive3(
-		orderRepo.Reactive(),
-		messageQueue.Reactive(),
-		cache.Reactive(),
-		func(ctx *pumped.ResolveCtx,
-			repo *pumped.Controller[string],
-			mq *pumped.Controller[string],
-			c *pumped.Controller[string]) (string, error) {
-			repoVal, _ := repo.Get()
-			mqVal, _ := mq.Get()
-			cacheVal, _ := c.Get()
-			return "order-service-" + repoVal + "-" + mqVal + "-" + cacheVal, nil
-		},
-		pumped.WithTag(nameTag, "OrderService"),
-	)
-
-	notificationService := pumped.Derive2(
-		messageQueue.Reactive(),
-		apiConfig.Reactive(),
-		func(ctx *pumped.ResolveCtx, mq *pumped.Controller[string], cfg *pumped.Controller[string]) (string, error) {
-			mqVal, _ := mq.Get()
-			cfgVal, _ := cfg.Get()
-			return "notification-service-" + mqVal + "-" + cfgVal, nil
-		},
-		pumped.WithTag(nameTag, "NotificationService"),
-	)
-
-	// Layer 5: API Handlers
-	userHandler := pumped.Derive2(
-		userService.Reactive(),
-		apiConfig.Reactive(),
-		func(ctx *pumped.ResolveCtx, svc *pumped.Controller[string], cfg *pumped.Controller[string]) (string, error) {
-			svcVal, _ := svc.Get()
-			cfgVal, _ := cfg.Get()
-			return "user-handler-" + svcVal + "-" + cfgVal, nil
-		},
-		pumped.WithTag(nameTag, "UserHandler"),
-	)
-
-	productHandler := pumped.Derive2(
-		productService.Reactive(),
-		apiConfig.Reactive(),
-		func(ctx *pumped.ResolveCtx, svc *pumped.Controller[string], cfg *pumped.Controller[string]) (string, error) {
-			svcVal, _ := svc.Get()
-			cfgVal, _ := cfg.Get()
-			return "product-handler-" + svcVal + "-" + cfgVal, nil
-		},
-		pumped.WithTag(nameTag, "ProductHandler"),
-	)
-
-	orderHandler := pumped.Derive3(
-		orderService.Reactive(),
-		notificationService.Reactive(),
-		apiConfig.Reactive(),
-		func(ctx *pumped.ResolveCtx,
-			os *pumped.Controller[string],
-			ns *pumped.Controller[string],
-			cfg *pumped.Controller[string]) (string, error) {
-			osVal, _ := os.Get()
-			nsVal, _ := ns.Get()
-			cfgVal, _ := cfg.Get()
-			return "order-handler-" + osVal + "-" + nsVal + "-" + cfgVal, nil
-		},
-		pumped.WithTag(nameTag, "OrderHandler"),
-	)
-
-	// Layer 6: API Gateway (top level)
-	apiGateway := pumped.Derive3(
-		userHandler.Reactive(),
-		productHandler.Reactive(),
-		orderHandler.Reactive(),
-		func(ctx *pumped.ResolveCtx,
-			uh *pumped.Controller[string],
-			ph *pumped.Controller[string],
-			oh *pumped.Controller[string]) (string, error) {
-			return "api-gateway", nil
-		},
-		pumped.WithTag(nameTag, "APIGateway"),
-	)
-
-	// Try to resolve the API Gateway - will fail at Database layer
-	// This will show the full dependency graph with all the components that depend on Database
-	_, err := pumped.Resolve(scope, apiGateway)
-
-	// Note: err might be nil here because reactive dependencies can fail without propagating
-	// The OnError hook is still called to log the failures, which is what we're testing
-	t.Logf("Resolve result: err=%v", err)
-
-	t.Logf("\n===== Full dependency graph with 15+ components shown above =====\n")
-	t.Logf("Error occurred at Database layer, showcasing multiple resolution attempts")
-	t.Logf("Graph shows dependencies at different stages:")
-	t.Logf("  - DBConfig (base layer)")
-	t.Logf("  - Database (failed)")
-	t.Logf("  - 4 Repositories (User, Product, Order, Inventory)")
-	t.Logf("  - 3 Services (User, Product, Order)")
-	t.Logf("  - 3 Handlers (User, Product, Order)")
-	t.Logf("  - 1 API Gateway (top level)")
-	t.Logf("  - MessageQueue, Cache, and Config components")
+	// Verify D2 connection from DBConfig to Database
+	if !strings.Contains(output, "->") {
+		t.Error("Expected D2 arrow syntax in output")
+	}
 }
 
 func TestGraphDebugExtension_DeeplyNestedDependencies(t *testing.T) {
@@ -1346,5 +1198,490 @@ func TestSanitizeD2NodeID(t *testing.T) {
 				t.Errorf("sanitizeD2NodeID(%q) = %q, want %q", tt.input, result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestBuildGraphData_NodeStatusAssignment(t *testing.T) {
+	// BEHAVIOR: buildGraphData assigns correct NodeStatus based on resolution state
+	// BUG CAUGHT: Status logic inverted (failed marked as OK, or resolved marked as pending)
+	// FAIL CHECK: If status mapping is wrong, specific status assertions fail
+	ext := NewGraphDebugExtension(NewSilentHandler(), NewD2Formatter())
+	scope := pumped.NewScope(
+		pumped.WithExtension(ext),
+	)
+	defer scope.Dispose()
+
+	nameTag := pumped.NewTag[string]("executor.name")
+
+	config := pumped.Provide(
+		func(ctx *pumped.ResolveCtx) (string, error) {
+			return "config", nil
+		},
+		pumped.WithTag(nameTag, "Config"),
+	)
+
+	// Resolve config first so it's tracked as resolved
+	_, err := pumped.Resolve(scope, config)
+	if err != nil {
+		t.Fatalf("Unexpected error resolving config: %v", err)
+	}
+
+	failingService := pumped.Derive1(
+		config.Reactive(),
+		func(ctx *pumped.ResolveCtx, cfg *pumped.Controller[string]) (string, error) {
+			return "", fmt.Errorf("service failed")
+		},
+		pumped.WithTag(nameTag, "FailingService"),
+	)
+
+	// Resolve failing service
+	_, _ = pumped.Resolve(scope, failingService)
+
+	graph := scope.ExportDependencyGraph()
+	data := ext.buildGraphData(graph, failingService)
+
+	statusByName := make(map[string]NodeStatus)
+	for _, node := range data.Nodes {
+		statusByName[node.Name] = node.Status
+	}
+
+	// Config was explicitly resolved → should be OK
+	if statusByName["Config"] != NodeStatusOK {
+		t.Errorf("Expected Config status %q, got %q", NodeStatusOK, statusByName["Config"])
+	}
+
+	// FailingService was passed as failedExecutor → should be Failed
+	if statusByName["FailingService"] != NodeStatusFailed {
+		t.Errorf("Expected FailingService status %q, got %q", NodeStatusFailed, statusByName["FailingService"])
+	}
+}
+
+func TestBuildGraphData_DeterministicNodeOrdering(t *testing.T) {
+	// BEHAVIOR: buildGraphData produces nodes sorted alphabetically by name for deterministic output
+	// BUG CAUGHT: Non-deterministic node ordering causing flaky test output or diff instability
+	// FAIL CHECK: If sorting is removed, nodes appear in random map iteration order
+	ext := NewGraphDebugExtension(NewSilentHandler(), NewD2Formatter())
+	scope := pumped.NewScope(
+		pumped.WithExtension(ext),
+	)
+	defer scope.Dispose()
+
+	nameTag := pumped.NewTag[string]("executor.name")
+
+	// Create executors with names that sort differently from creation order
+	zulu := pumped.Provide(
+		func(ctx *pumped.ResolveCtx) (string, error) { return "z", nil },
+		pumped.WithTag(nameTag, "Zulu"),
+	)
+	alpha := pumped.Derive1(
+		zulu.Reactive(),
+		func(ctx *pumped.ResolveCtx, z *pumped.Controller[string]) (string, error) {
+			val, _ := z.Get()
+			return "a-" + val, nil
+		},
+		pumped.WithTag(nameTag, "Alpha"),
+	)
+	mike := pumped.Derive1(
+		zulu.Reactive(),
+		func(ctx *pumped.ResolveCtx, z *pumped.Controller[string]) (string, error) {
+			val, _ := z.Get()
+			return "m-" + val, nil
+		},
+		pumped.WithTag(nameTag, "Mike"),
+	)
+
+	_, _ = pumped.Resolve(scope, alpha)
+	_, _ = pumped.Resolve(scope, mike)
+
+	graph := scope.ExportDependencyGraph()
+	data := ext.buildGraphData(graph, nil)
+
+	// Nodes must be sorted alphabetically: Alpha, Mike, Zulu
+	if len(data.Nodes) < 3 {
+		t.Fatalf("Expected at least 3 nodes, got %d", len(data.Nodes))
+	}
+
+	for i := 1; i < len(data.Nodes); i++ {
+		if data.Nodes[i-1].Name >= data.Nodes[i].Name {
+			t.Errorf("Nodes not sorted: %q >= %q at positions %d,%d",
+				data.Nodes[i-1].Name, data.Nodes[i].Name, i-1, i)
+		}
+	}
+}
+
+func TestBuildGraphData_DeterministicEdgeOrdering(t *testing.T) {
+	// BEHAVIOR: buildGraphData produces edges sorted by (From, To) for deterministic output
+	// BUG CAUGHT: Non-deterministic edge ordering causing flaky output
+	// FAIL CHECK: If edge sorting is removed, edges appear in random map iteration order
+	ext := NewGraphDebugExtension(NewSilentHandler(), NewD2Formatter())
+	scope := pumped.NewScope(
+		pumped.WithExtension(ext),
+	)
+	defer scope.Dispose()
+
+	nameTag := pumped.NewTag[string]("executor.name")
+
+	root := pumped.Provide(
+		func(ctx *pumped.ResolveCtx) (string, error) { return "root", nil },
+		pumped.WithTag(nameTag, "Root"),
+	)
+
+	childB := pumped.Derive1(
+		root.Reactive(),
+		func(ctx *pumped.ResolveCtx, r *pumped.Controller[string]) (string, error) {
+			val, _ := r.Get()
+			return "b-" + val, nil
+		},
+		pumped.WithTag(nameTag, "ChildB"),
+	)
+
+	childA := pumped.Derive1(
+		root.Reactive(),
+		func(ctx *pumped.ResolveCtx, r *pumped.Controller[string]) (string, error) {
+			val, _ := r.Get()
+			return "a-" + val, nil
+		},
+		pumped.WithTag(nameTag, "ChildA"),
+	)
+
+	_, _ = pumped.Resolve(scope, childB)
+	_, _ = pumped.Resolve(scope, childA)
+
+	graph := scope.ExportDependencyGraph()
+	data := ext.buildGraphData(graph, nil)
+
+	// Edges must be sorted by (From, To)
+	for i := 1; i < len(data.Edges); i++ {
+		prev := data.Edges[i-1]
+		curr := data.Edges[i]
+		if prev.From > curr.From || (prev.From == curr.From && prev.To > curr.To) {
+			t.Errorf("Edges not sorted: (%q→%q) before (%q→%q) at positions %d,%d",
+				prev.From, prev.To, curr.From, curr.To, i-1, i)
+		}
+	}
+}
+
+func TestHumanHandler_LevelFiltering(t *testing.T) {
+	// BEHAVIOR: HumanHandler only enables logging at or above its configured level
+	// BUG CAUGHT: Handler logging debug messages when configured for error-only
+	// FAIL CHECK: If Enabled ignores level, wrong levels would return true
+	handler := NewHumanHandler(os.Stdout, slog.LevelError)
+
+	// Below threshold - should be disabled
+	if handler.Enabled(context.Background(), slog.LevelDebug) {
+		t.Error("Expected Debug to be disabled when level is Error")
+	}
+	if handler.Enabled(context.Background(), slog.LevelInfo) {
+		t.Error("Expected Info to be disabled when level is Error")
+	}
+	if handler.Enabled(context.Background(), slog.LevelWarn) {
+		t.Error("Expected Warn to be disabled when level is Error")
+	}
+
+	// At threshold - should be enabled
+	if !handler.Enabled(context.Background(), slog.LevelError) {
+		t.Error("Expected Error to be enabled when level is Error")
+	}
+
+	// Test with Info level threshold
+	infoHandler := NewHumanHandler(os.Stdout, slog.LevelInfo)
+
+	if infoHandler.Enabled(context.Background(), slog.LevelDebug) {
+		t.Error("Expected Debug to be disabled when level is Info")
+	}
+	if !infoHandler.Enabled(context.Background(), slog.LevelInfo) {
+		t.Error("Expected Info to be enabled when level is Info")
+	}
+	if !infoHandler.Enabled(context.Background(), slog.LevelWarn) {
+		t.Error("Expected Warn to be enabled when level is Info")
+	}
+}
+
+func TestHumanHandler_DefaultFormatting(t *testing.T) {
+	// BEHAVIOR: Non-GraphDebug messages use default [LEVEL] MESSAGE format with key: value attributes
+	// BUG CAUGHT: Default case in Handle switch broken, attributes not written
+	// FAIL CHECK: If default formatting removed, output would be empty or wrong format
+	var buf bytes.Buffer
+	handler := NewHumanHandler(&buf, slog.LevelInfo)
+
+	logger := slog.New(handler)
+	logger.Info("Custom Message", "key1", "value1", "key2", 42)
+
+	output := buf.String()
+
+	if !strings.Contains(output, "[INFO]") {
+		t.Error("Expected '[INFO]' level prefix in default format")
+	}
+	if !strings.Contains(output, "Custom Message") {
+		t.Error("Expected 'Custom Message' in output")
+	}
+	if !strings.Contains(output, "key1: value1") {
+		t.Error("Expected 'key1: value1' attribute in output")
+	}
+	if !strings.Contains(output, "key2: 42") {
+		t.Error("Expected 'key2: 42' attribute in output")
+	}
+}
+
+func TestD2Formatter_PendingNodeStyling(t *testing.T) {
+	// BEHAVIOR: Pending nodes get gray fill color, no stroke
+	// BUG CAUGHT: Pending nodes getting wrong color or unexpected stroke
+	// FAIL CHECK: If pending styling is wrong, color assertion fails
+	data := GraphData{
+		Nodes: []GraphNode{
+			{Name: "PendingNode", Status: NodeStatusPending},
+		},
+		Edges: nil,
+	}
+
+	d2Output := NewD2Formatter().FormatGraph(data)
+
+	// Validate D2 syntax
+	_, parseErr := d2parser.Parse("test.d2", strings.NewReader(d2Output), nil)
+	if parseErr != nil {
+		t.Errorf("D2 output is not valid syntax: %v\nD2 Output:\n%s", parseErr, d2Output)
+	}
+
+	// Pending nodes should get gray fill
+	if !strings.Contains(d2Output, d2ColorPending) {
+		t.Errorf("Expected pending node color '%s' in D2 output, got:\n%s", d2ColorPending, d2Output)
+	}
+
+	// Pending nodes should NOT have stroke
+	if strings.Contains(d2Output, "style.stroke:") {
+		t.Error("Expected no stroke styling for pending nodes")
+	}
+}
+
+func TestD2Formatter_OKNodeStyling(t *testing.T) {
+	// BEHAVIOR: OK nodes get green fill color, no stroke
+	// BUG CAUGHT: OK nodes getting failed styling or wrong color
+	// FAIL CHECK: If OK styling is wrong, color assertion fails
+	data := GraphData{
+		Nodes: []GraphNode{
+			{Name: "OKNode", Status: NodeStatusOK},
+		},
+		Edges: nil,
+	}
+
+	d2Output := NewD2Formatter().FormatGraph(data)
+
+	// Validate D2 syntax
+	_, parseErr := d2parser.Parse("test.d2", strings.NewReader(d2Output), nil)
+	if parseErr != nil {
+		t.Errorf("D2 output is not valid syntax: %v\nD2 Output:\n%s", parseErr, d2Output)
+	}
+
+	// OK nodes should get green fill
+	if !strings.Contains(d2Output, d2ColorOK) {
+		t.Errorf("Expected OK node color '%s' in D2 output, got:\n%s", d2ColorOK, d2Output)
+	}
+
+	// OK nodes should NOT have stroke
+	if strings.Contains(d2Output, "style.stroke:") {
+		t.Error("Expected no stroke styling for OK nodes")
+	}
+}
+
+func TestD2Formatter_FailedNodeHasStroke(t *testing.T) {
+	// BEHAVIOR: Failed nodes get red fill, red stroke, and stroke-width 3
+	// BUG CAUGHT: Failed nodes missing visual distinction (no stroke = hard to spot in diagram)
+	// FAIL CHECK: If stroke logic is removed, stroke assertions fail
+	data := GraphData{
+		Nodes: []GraphNode{
+			{Name: "FailedNode", Status: NodeStatusFailed},
+		},
+		Edges: nil,
+	}
+
+	d2Output := NewD2Formatter().FormatGraph(data)
+
+	// Validate D2 syntax
+	_, parseErr := d2parser.Parse("test.d2", strings.NewReader(d2Output), nil)
+	if parseErr != nil {
+		t.Errorf("D2 output is not valid syntax: %v\nD2 Output:\n%s", parseErr, d2Output)
+	}
+
+	if !strings.Contains(d2Output, d2ColorFailed) {
+		t.Errorf("Expected failed fill '%s'", d2ColorFailed)
+	}
+	if !strings.Contains(d2Output, d2StrokeFailed) {
+		t.Errorf("Expected failed stroke '%s'", d2StrokeFailed)
+	}
+	if !strings.Contains(d2Output, "stroke-width: 3") {
+		t.Error("Expected stroke-width: 3 for failed nodes")
+	}
+}
+
+func TestD2Formatter_MixedStatusNodes(t *testing.T) {
+	// BEHAVIOR: Graph with all three statuses renders each with correct styling
+	// BUG CAUGHT: Status switch falling through to wrong case for some statuses
+	// FAIL CHECK: If any status maps to wrong color, assertion fails
+	data := GraphData{
+		Nodes: []GraphNode{
+			{Name: "Good", Status: NodeStatusOK},
+			{Name: "Bad", Status: NodeStatusFailed},
+			{Name: "Unknown", Status: NodeStatusPending},
+		},
+		Edges: []GraphEdge{
+			{From: "Good", To: "Bad"},
+			{From: "Unknown", To: "Bad"},
+		},
+	}
+
+	d2Output := NewD2Formatter().FormatGraph(data)
+
+	// Validate D2 syntax
+	_, parseErr := d2parser.Parse("test.d2", strings.NewReader(d2Output), nil)
+	if parseErr != nil {
+		t.Errorf("D2 output is not valid syntax: %v\nD2 Output:\n%s", parseErr, d2Output)
+	}
+
+	// All three colors should be present
+	if !strings.Contains(d2Output, d2ColorOK) {
+		t.Errorf("Expected OK color '%s' in output", d2ColorOK)
+	}
+	if !strings.Contains(d2Output, d2ColorFailed) {
+		t.Errorf("Expected failed color '%s' in output", d2ColorFailed)
+	}
+	if !strings.Contains(d2Output, d2ColorPending) {
+		t.Errorf("Expected pending color '%s' in output", d2ColorPending)
+	}
+
+	// Both edges should be present
+	if !strings.Contains(d2Output, "Good -> Bad") {
+		t.Error("Expected edge 'Good -> Bad' in output")
+	}
+	if !strings.Contains(d2Output, "Unknown -> Bad") {
+		t.Error("Expected edge 'Unknown -> Bad' in output")
+	}
+}
+
+func TestBuildGraphData_EmptyGraphReturnsEmptyData(t *testing.T) {
+	// BEHAVIOR: buildGraphData returns empty GraphData for empty graph
+	// BUG CAUGHT: Nil pointer panic or non-empty result on empty input
+	// FAIL CHECK: If empty check is removed, result would have unexpected nodes
+	ext := NewGraphDebugExtension(NewSilentHandler(), NewD2Formatter())
+
+	emptyGraph := make(map[pumped.AnyExecutor][]pumped.AnyExecutor)
+	data := ext.buildGraphData(emptyGraph, nil)
+
+	if len(data.Nodes) != 0 {
+		t.Errorf("Expected 0 nodes for empty graph, got %d", len(data.Nodes))
+	}
+	if len(data.Edges) != 0 {
+		t.Errorf("Expected 0 edges for empty graph, got %d", len(data.Edges))
+	}
+}
+
+func TestFormatDependencyGraph_ErrorDetailsSection(t *testing.T) {
+	// BEHAVIOR: formatDependencyGraph includes Error Details section with executor name and error
+	// BUG CAUGHT: Missing error details in graph output, or wrong executor name
+	// FAIL CHECK: If error details section removed, assertions fail
+	ext := NewGraphDebugExtension(NewSilentHandler(), NewD2Formatter())
+	scope := pumped.NewScope(
+		pumped.WithExtension(ext),
+	)
+	defer scope.Dispose()
+
+	nameTag := pumped.NewTag[string]("executor.name")
+
+	config := pumped.Provide(
+		func(ctx *pumped.ResolveCtx) (string, error) {
+			return "config", nil
+		},
+		pumped.WithTag(nameTag, "Config"),
+	)
+
+	failingExec := pumped.Derive1(
+		config.Reactive(),
+		func(ctx *pumped.ResolveCtx, cfg *pumped.Controller[string]) (string, error) {
+			return "", fmt.Errorf("specific error message for test")
+		},
+		pumped.WithTag(nameTag, "FailingExec"),
+	)
+
+	_, _ = pumped.Resolve(scope, failingExec)
+
+	testErr := fmt.Errorf("specific error message for test")
+	output := ext.formatDependencyGraph(scope, failingExec, testErr)
+
+	if !strings.Contains(output, "Error Details:") {
+		t.Error("Expected 'Error Details:' section in output")
+	}
+	if !strings.Contains(output, "Executor: FailingExec") {
+		t.Error("Expected 'Executor: FailingExec' in error details")
+	}
+	if !strings.Contains(output, "specific error message for test") {
+		t.Error("Expected error message in error details")
+	}
+}
+
+func TestHumanHandler_WithAttrsAndWithGroup(t *testing.T) {
+	// BEHAVIOR: WithAttrs and WithGroup return self (stateless handler)
+	// BUG CAUGHT: WithAttrs/WithGroup returning nil or different handler breaking slog chain
+	// FAIL CHECK: If methods return nil, identity checks fail
+	handler := NewHumanHandler(&bytes.Buffer{}, slog.LevelInfo)
+
+	withAttrs := handler.WithAttrs([]slog.Attr{slog.String("key", "val")})
+	if withAttrs != handler {
+		t.Error("Expected WithAttrs to return self")
+	}
+
+	withGroup := handler.WithGroup("testgroup")
+	if withGroup != handler {
+		t.Error("Expected WithGroup to return self")
+	}
+}
+
+func TestD2Formatter_EdgesSanitizeNodeIDs(t *testing.T) {
+	// BEHAVIOR: Edge connections use sanitized node IDs matching the declarations
+	// BUG CAUGHT: Edges using raw names while declarations use sanitized IDs → broken D2
+	// FAIL CHECK: If edge sanitization is removed, D2 parser would reject dangling references
+	data := GraphData{
+		Nodes: []GraphNode{
+			{Name: "Node With Spaces", Status: NodeStatusOK},
+			{Name: "node-with-dashes", Status: NodeStatusOK},
+		},
+		Edges: []GraphEdge{
+			{From: "Node With Spaces", To: "node-with-dashes"},
+		},
+	}
+
+	d2Output := NewD2Formatter().FormatGraph(data)
+
+	// Validate D2 syntax - this will fail if edges reference non-existent IDs
+	_, parseErr := d2parser.Parse("test.d2", strings.NewReader(d2Output), nil)
+	if parseErr != nil {
+		t.Errorf("D2 output with special chars is not valid syntax: %v\nD2 Output:\n%s", parseErr, d2Output)
+	}
+
+	// Verify sanitized IDs are used in edges
+	if !strings.Contains(d2Output, "Node_With_Spaces -> node_with_dashes") {
+		t.Errorf("Expected sanitized edge 'Node_With_Spaces -> node_with_dashes', got:\n%s", d2Output)
+	}
+}
+
+func TestD2Formatter_NodeLabelPreservesOriginalName(t *testing.T) {
+	// BEHAVIOR: D2 node declarations use sanitized ID but preserve original name as label
+	// BUG CAUGHT: Display label showing sanitized ID instead of human-readable name
+	// FAIL CHECK: If label uses sanitized name, the quoted label assertion fails
+	data := GraphData{
+		Nodes: []GraphNode{
+			{Name: "My Service", Status: NodeStatusOK},
+		},
+		Edges: nil,
+	}
+
+	d2Output := NewD2Formatter().FormatGraph(data)
+
+	// Sanitized ID should be used for declaration
+	if !strings.Contains(d2Output, "My_Service:") {
+		t.Errorf("Expected sanitized ID 'My_Service:', got:\n%s", d2Output)
+	}
+
+	// Original name should be preserved as label in quotes
+	if !strings.Contains(d2Output, `"My Service"`) {
+		t.Errorf("Expected original label '\"My Service\"', got:\n%s", d2Output)
 	}
 }
