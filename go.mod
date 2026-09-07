@@ -2,7 +2,7 @@ module github.com/pumped-fn/pumped-go
 
 go 1.24
 
-require oss.terrastruct.com/d2 v0.7.1
+require oss.terrastruct.com/d2 v0.7.2
 
 require (
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0 // indirect
